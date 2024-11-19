@@ -50,8 +50,8 @@ function (model::LaneletPredictor)(agt_features, g_all, g_hetero)
     
     # Fusion and prediction
     x = hcat(emb_actor, emb_map)
-    emb_fuse = model.transformer((; hidden_state = x)).hidden_state
-    predictions = model.pred_head(emb_fuse[:, 1:size(emb_actor, 2), 1])
+    emb_fuse = model.transformer((; hidden_state = x)).hidden_state     # (channel, tokens, batches)
+    predictions = model.pred_head(emb_fuse[:, 1:size(emb_actor, 2), 1])     # Only take agent features for prediction
     
     return predictions
 end 
