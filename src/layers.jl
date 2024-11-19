@@ -3,21 +3,26 @@
 
 # ------ Res1d -----------
 struct Res1d
-    layers::NamedTuple
+    layers::Chain
     downsample::Union{Chain, Nothing}
     act::Bool
 end
 
 Flux.@layer Res1d
 
-### Initialization
 function Res1d(n_in, n_out; kernel_size=3, stride=1, norm="GN", ng=32, act=true)
     filter = (kernel_size,)
-    layers = (
-        conv1 = Conv(filter, n_in => n_out, stride=stride, pad=SamePad()),
-        norm1 = norm == "GN" ? GroupNorm(n_out, gcd(ng, n_out)) : BatchNorm(n_out),
-        conv2 = Conv(filter, n_out => n_out, stride=1, pad=SamePad()),
-        norm2 = norm == "GN" ? GroupNorm(n_out, gcd(ng, n_out)) : BatchNorm(n_out)
+    conv1 = Conv(filter, n_in => n_out, stride=stride, pad=SamePad())
+    norm1 = norm == "GN" ? GroupNorm(n_out, gcd(ng, n_out)) : BatchNorm(n_out)
+    conv2 = Conv(filter, n_out => n_out, stride=1, pad=SamePad())
+    norm2 = norm == "GN" ? GroupNorm(n_out, gcd(ng, n_out)) : BatchNorm(n_out)
+
+    layers = Chain(
+        conv1,
+        norm1,
+        relu,
+        conv2,
+        norm2
     )
     
     if stride != 1 || n_out != n_in
@@ -25,32 +30,27 @@ function Res1d(n_in, n_out; kernel_size=3, stride=1, norm="GN", ng=32, act=true)
             Conv((1,), n_in=>n_out, stride=stride),
             norm == "GN" ? GroupNorm(n_out, gcd(ng, n_out)) : BatchNorm(n_out)
         )
-    else 
+    else
         downsample = nothing
     end
+
 
     Res1d(layers, downsample, act)
 end
 
 ### Forward function
 function (res1d::Res1d)(X)
-    l = res1d.layers
-    out = l.conv1(X)
-    out = l.norm1(out)
-    out = relu.(out)  # Element-wise ReLU
-    out = l.conv2(out)
-    out = l.norm2(out)
+    out = res1d.layers(X)
 
     if !isnothing(res1d.downsample)
         X = res1d.downsample(X)
     end
-    # TODO: 
+    
+    # TODO: Refactor it using skip connection
     out = out .+ X  # In-place addition for residual connection
 
-    if res1d.act
-        out = relu.(out)  # Element-wise ReLU
-    end
-    out
+    out = res1d.act ? relu.(out) : out
+    return out
 end
 
 
