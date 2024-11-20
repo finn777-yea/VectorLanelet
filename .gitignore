@@ -2,3 +2,5 @@ dev
 
 Manifest.toml
 .CondaPkg
+
+wandb
