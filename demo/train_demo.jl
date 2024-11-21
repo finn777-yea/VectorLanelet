@@ -59,21 +59,18 @@ function prepare_agent_features(lanelet_roadway::LaneletRoadway; n_train::Int=70
     μ, σ = VectorLanelet.calculate_mean_and_std(agt_features; dims=(1,3))       # μ and σ of size (1,2,1)
     agt_features = (agt_features .- μ) ./ σ
 
-    agt_features_train = agt_features[:,:,1:n_train]
-    agt_features_test = agt_features[:,:,n_train+1:end]
+    # agt_features_train = agt_features[:,:,1:n_train]
+    # agt_features_test = agt_features[:,:,n_train+1:end]
 
     labels = Float32.(hcat(labels...))
     
-    # Split labels
-    labels_train = labels[:,1:n_train]
-    labels_test = labels[:,n_train+1:end]
-    @assert size(agt_features_train) == (2,2,n_train)
-    @assert size(labels_train) == (2, n_train)
+    # labels_train = labels[:,1:n_train]
+    # labels_test = labels[:,n_train+1:end]
 
     # Reshape the μ and σ to Vector
     μ = reshape(μ,:)
     σ = reshape(σ,:)
-    return agt_features_train, agt_features_test, labels_train, labels_test, μ, σ
+    return agt_features, labels, μ, σ
 end
 
 """
@@ -143,7 +140,7 @@ function run_training(config::Dict{String, Any})
     
     # Prepare data
     @info "Preparing agent features"
-    agt_features_train, agt_features_test, labels_train, labels_test, μ, σ = prepare_agent_features(lanelet_roadway)
+    agt_features, labels, μ, σ = prepare_agent_features(lanelet_roadway)
     @info "Preparing map features"
     g_all, g_hetero = prepare_map_features(lanelet_roadway, g_meta, μ, σ)
     
@@ -153,9 +150,12 @@ function run_training(config::Dict{String, Any})
     # Training setup
     opt = Flux.setup(Adam(config["learning_rate"]), model)
     num_epochs = config["num_epochs"]
+
+    # Split training data
+    train_data, test_data = splitobs((agt_features, labels), at=0.8)
     
     train_loader = Flux.DataLoader(
-        (agt_features_train, labels_train),
+        train_data,
         batchsize=config["batch_size"],
         shuffle=true
     )
