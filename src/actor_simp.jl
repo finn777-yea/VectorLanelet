@@ -11,7 +11,7 @@ function ActorNet_Simp(config::Dict)
     norm = "GN"
     ng = 1
 
-    n_in = config["din_actor"]
+    n_in = config["actor_in_channel"]
     n_out = [64, 128]
     blocks = [Res1d, Res1d]
     num_blocks = [2, 2]
@@ -36,7 +36,7 @@ function ActorNet_Simp(config::Dict)
 
     ### lateral
     lateral = []
-    n_actor = config["n_actor"]
+    n_actor = config["actor_out_channel"]
     for i in eachindex(num_blocks)
         lat_connection = Conv1d(n_out[i], n_actor, norm=norm, ng=ng, act=false)
         push!(lateral, lat_connection)

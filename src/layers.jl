@@ -24,7 +24,7 @@ function Res1d(n_in, n_out; kernel_size=3, stride=1, norm="GN", ng=32, act=true)
         conv2,
         norm2
     )
-    
+
     if stride != 1 || n_out != n_in
         downsample = Chain(
             Conv((1,), n_in=>n_out, stride=stride),
@@ -45,7 +45,7 @@ function (res1d::Res1d)(X)
     if !isnothing(res1d.downsample)
         X = res1d.downsample(X)
     end
-    
+
     # TODO: Refactor it using skip connection
     out = out .+ X  # In-place addition for residual connection
 
@@ -129,7 +129,9 @@ function PredictionHead(input_dim::Int)
     return PredictionHead(Dense(input_dim => 2))
 end
 
-function (m::PredictionHead)(x)
-    # Expect x to be of shape (hidden_size, num_samples)
-    return m.dense(x)
+function (m::PredictionHead)(x, μ, σ)
+    # Expect x to be the shape (hidden_size, num_samples)
+    out = m.dense(x)
+    out = out .* σ .+ μ
+    return out
 end

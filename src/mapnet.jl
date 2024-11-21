@@ -8,13 +8,13 @@ end
 Flux.@layer MapNet
 
 function MapNet(config)
-    n_map = config["n_map"]
+    n_map = config["map_out_channel"]
     n_scales = config["num_scales"]
     norm = "GN"
     ng = 1
 
     input = Chain(
-        Dense(64=>n_map, relu),
+        Dense(64=>n_map, relu),      # TODO: 64 is the out channel dimensions of vsg
         Linear(n_map, n_map, norm=norm, ng=ng, act=false)
     )
 
