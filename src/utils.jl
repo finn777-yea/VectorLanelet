@@ -9,3 +9,9 @@ function extract_gml_src_dst(g, rel_type::String)
     end
     return src_list, dst_list
 end
+
+function calculate_mean_and_std(data; dims)
+    μ = mean(data, dims=dims)
+    σ = std(data, dims=dims)
+    return μ, σ
+end

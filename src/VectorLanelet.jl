@@ -11,7 +11,7 @@ using GraphNeuralNetworks
 using Graphs
 using MetaGraphs
 using Transformers
-
+using Statistics
 
 export Res1d,
        Conv1d,
@@ -31,7 +31,11 @@ include("mapnet.jl")
 export extract_gml_src_dst
 include("utils.jl")
 
+
 export LaneletPredictor
-include("lanelet_predictor.jl")
+include("lanelet_predictor.jl") 
+
+export logging_callback, loss_fn
+include("training_utils.jl")
 
 end     # VectorLanelet
