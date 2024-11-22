@@ -11,8 +11,9 @@ using GraphIO.GraphML
 using Transformers
 using Flux
 using Statistics
+using MLUtils
 
-using Wandb, Logging
+using Wandb, Logging, Dates
 
 """
 Load and prepare the lanelet map and graph data
@@ -135,7 +136,8 @@ end
 Main encoding pipeline
 """
 
-function run_training(config::Dict{String, Any})
+function run_training(wblogger::WandbLogger, config::Dict{String, Any})
+    device = config["use_cuda"] ? gpu : cpu
     lanelet_roadway, g_meta = load_map_data()
     
     # Prepare data
@@ -145,14 +147,14 @@ function run_training(config::Dict{String, Any})
     g_all, g_hetero = prepare_map_features(lanelet_roadway, g_meta, μ, σ)
     
     # Initialize model
-    model = LaneletPredictor(config)
+    model = LaneletPredictor(config) |> device
     
     # Training setup
     opt = Flux.setup(Adam(config["learning_rate"]), model)
     num_epochs = config["num_epochs"]
 
     # Split training data
-    train_data, test_data = splitobs((agt_features, labels), at=0.8)
+    train_data, val_data = splitobs((agt_features, labels), at=0.8)
     
     train_loader = Flux.DataLoader(
         train_data,
@@ -160,27 +162,50 @@ function run_training(config::Dict{String, Any})
         shuffle=true
     )
 
+    # Initial logging
+    for (type, data) in ("train" => train_data, "val" => val_data)
+        let (x, y) = data
+            Flux.reset!(model)
+            values = loss_fn(model, x, y, g_all, g_hetero, μ, σ)
+            epoch = 0
+            logging_callback(wblogger, type, epoch, cpu(values)..., log_step_increment=0)
+        end
+    end
+
     # Training loop
     @info "Start training"
     for epoch in 1:num_epochs
-        train_loss = 0.
-        train_batches = 0
-        for (agt_batch, label_batch) in train_loader
+        Flux.reset!(model)
+        
+        # Training
+        for (x, y) in train_loader
             loss, grad = Flux.withgradient(model) do m
-                predictions = m(agt_batch, g_all, g_hetero, μ, σ)
-                Flux.mse(predictions, label_batch)
+                loss_fn(m, x, y, g_all, g_hetero, μ, σ)
             end
             
-            train_loss += loss
-            train_batches += 1
             Flux.update!(opt, model, grad[1])
+            logging_callback(wblogger, "train", epoch, cpu(loss), log_step_increment=length(y))
         end
-        
-        if epoch % 10 == 0
-           @info "Epoch $epoch: Train loss = $(train_loss/train_batches)"
+    
+
+        # Validation
+        let (x, y) = val_data
+            Flux.reset!(model)
+            values = loss_fn(model, x, y, g_all, g_hetero, μ, σ)
+
+            # logging
+            logging_callback(wblogger, "val", epoch, cpu(values), log_step_increment=length(y))
         end
     end
     
 end
+
+
 include("../src/config.jl")
-run_training(config)
+
+wblogger = WandbLogger(
+    project = "VectorLanelet",
+    name = "demo-$(now())",
+    config = config
+)
+run_training(wblogger, config)
