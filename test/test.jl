@@ -14,6 +14,10 @@ config["din_actor"] = 2
     res1d = Res1d(3, 32)
     @test res1d(rand(Float32, 10, 3, 4)) |> size == (10,32,4)
 end
+@testset "create_residual_block" begin
+    res_block = create_residual_block(3, 32, stride=1)
+    @test res_block(rand(Float32, 10, 3, 4)) |> size == (10,32,4)
+end
 
 # @testset "ActorNet" begin
 #     actornet = ActorNet(config)

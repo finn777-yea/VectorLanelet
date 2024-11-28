@@ -19,6 +19,9 @@ export Res1d,
        PredictionHead
 include("layers.jl")
 
+export create_residual_block
+include("layers_remaster.jl")
+
 export VectorSubGraph
 include("vectorSubgraph.jl")
 
