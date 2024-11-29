@@ -19,8 +19,13 @@ export Res1d,
        PredictionHead
 include("layers.jl")
 
-export create_residual_block
+export create_residual_block,
+       create_group_block,
+       create_node_encoder
 include("layers_remaster.jl")
+
+export create_actor_net
+include("create_model.jl")
 
 export VectorSubGraph
 include("vectorSubgraph.jl")
