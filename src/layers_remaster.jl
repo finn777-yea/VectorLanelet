@@ -35,11 +35,13 @@ Each group contains a first layer with stride 2 and the following layers with st
     - input_channels: input channels of the group
     - output_channels: output channels of the group
 """
-function create_group_block(input_channels, output_channels; kernel_size=2, stride=2, norm="GN", ng=32)
-    first_layer = create_residual_block(input_channels, output_channels, 
-            kernel_size=kernel_size, stride=stride, norm=norm, ng=ng)
-    second_layer = create_residual_block(output_channels, output_channels, 
-            kernel_size=kernel_size, stride=1, norm=norm, ng=ng)
+function create_group_block(i, input_channels, output_channels)
+    first_layer = if i == 1
+        create_residual_block(input_channels, output_channels, stride=1)
+    else
+        create_residual_block(input_channels, output_channels, stride=2)
+    end
+    second_layer = create_residual_block(output_channels, output_channels, stride=1)
     return Chain(first_layer, second_layer)
 end
 
@@ -48,7 +50,7 @@ end
     Contains 2 dense layers and batch/layer normalization
 """
 
-function create_node_encoder(in_channels, out_channels, norm="layernorm ")
+function create_node_encoder(in_channels, out_channels, norm="layernorm")
     norm_layer = norm == "layernorm" ? LayerNorm : BatchNorm
     linear1 = Dense(in_channels, out_channels)
     norm1 = norm_layer(out_channels)

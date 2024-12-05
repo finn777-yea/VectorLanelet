@@ -4,6 +4,57 @@ using Transformers
 """
 Complete model architecture combining all components
 """
+
+struct ActorNet_Simp
+    groups::Chain
+    output_block::Chain
+    lateral::Chain
+end
+
+Flux.@layer ActorNet_Simp
+
+function ActorNet_Simp(in_channels, group_out_channels::Vector{Int}=[64, 128])
+    out_channels = group_out_channels[end]
+    num_groups = length(group_out_channels)
+    groups = []
+    for i in eachindex(group_out_channels)
+        if i == 1
+            push!(groups, create_group_block(i, in_channels, group_out_channels[i]))
+        else
+            push!(groups, create_group_block(i, group_out_channels[i-1], group_out_channels[i])) 
+        end
+    end
+    groups = Chain(groups...)
+
+    lateral = []
+    for i in eachindex(group_out_channels)
+        lat_connection = Chain(
+            Conv((1,), group_out_channels[i]=>out_channels, stride=1),
+            GroupNorm(out_channels, gcd(32, out_channels)),
+            relu
+        )
+        push!(lateral, lat_connection)
+    end
+    lateral = Chain(lateral...)
+
+    output_block = create_residual_block(out_channels, out_channels, stride=1)
+
+    ActorNet_Simp(groups, output_block, lateral)
+end
+
+function (actornet::ActorNet_Simp)(agt_features)
+    outputs = Flux.activations(actornet.groups, agt_features)
+
+    out = actornet.lateral[end](outputs[end])
+    for i in range(length(outputs)-1, 1, step=-1)
+        out = upsample_linear(out, 2, align_corners=false)
+        out = out .+ actornet.lateral[i](outputs[i])
+    end
+
+    out = actornet.output_block(out)
+    return @view out[end, :, :]
+end
+
 struct LaneletPredictor
     actornet::ActorNet_Simp
     vsg::VectorSubGraph

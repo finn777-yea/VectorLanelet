@@ -6,6 +6,8 @@ struct VectorSubGraph{T<:Int}
     linear::Dense
 end
 
+Flux.@layer VectorSubGraph
+
 function VectorSubGraph(in_channel::Int, num_layers::Int=3, hidden_unit::Int=64)
     out_channel = hidden_unit
     layers = []
@@ -45,6 +47,7 @@ struct MLP
     shortcut
 end
 
+Flux.@layer MLP
 
 function MLP(in_channel::Int, out_channel::Int; hidden_unit::Int=64, bias::Bool=true, activation::String="relu", norm::String="layer")
     # Define the activation function

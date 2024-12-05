@@ -6,7 +6,7 @@ using Lanelet2.Routing
 using Lanelet2.Core
 using AutomotiveSimulator
 using Flux
-# using CUDA
+using CUDA
 using GraphNeuralNetworks
 using Graphs
 using MetaGraphs
@@ -24,14 +24,13 @@ export create_residual_block,
        create_node_encoder
 include("layers_remaster.jl")
 
-export create_actor_net
-include("create_model.jl")
+# export create_actor_net,
+#        create_vector_subgraph
+# include("create_model.jl")
 
 export VectorSubGraph
 include("vectorSubgraph.jl")
 
-export ActorNet_Simp
-include("actor_simp.jl")
 
 export MapNet
 include("mapnet.jl")
@@ -40,10 +39,11 @@ export extract_gml_src_dst
 include("utils.jl")
 
 
-export LaneletPredictor
+export ActorNet_Simp,
+       LaneletPredictor
 include("lanelet_predictor.jl") 
 
-export logging_callback, loss_fn
+export logging_callback, loss_fn, save_model_state
 include("training_utils.jl")
 
 end     # VectorLanelet
