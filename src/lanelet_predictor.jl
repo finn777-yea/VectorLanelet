@@ -5,6 +5,7 @@ using Transformers
 Complete model architecture combining all components
 """
 
+# ---- ActorNet_Simp ----
 struct ActorNet_Simp
     groups::Chain
     output_block::Chain
@@ -55,6 +56,52 @@ function (actornet::ActorNet_Simp)(agt_features)
     return @view out[end, :, :]
 end
 
+# ---- PolylineEncoder ----
+struct PolylineEncoder
+    layers::Chain
+    output_layer::Dense
+end
+
+Flux.@layer PolylineEncoder
+
+function PolylineEncoder(in_channels, out_channels, num_layers::Int=3, hidden_unit::Int=64)
+    layers = []
+    for i in 1:num_layers
+        push!(layers, create_node_encoder(in_channels, hidden_unit))
+        in_channels = hidden_unit * 2
+    end
+    layers = Chain(layers...)
+    output_layer = Dense(hidden_unit * 2, out_channels)
+    PolylineEncoder(layers, output_layer)
+end
+
+
+"""
+Forward pass for PolylineEncoder
+    Takes a batch of graphs and node features as input_features
+    NodeEncoder -> MaxPooling -> Duplication -> Concatenate -> OutputLayer -> MaxPooling
+    
+    - clusters = [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, ...]
+"""
+function (pline::PolylineEncoder)(g::GNNGraph, X::AbstractMatrix)
+    max_pool = GlobalPool(max)
+    clusters = graph_indicator(g)
+    for layer in pline.layers
+        X = layer(X)
+        agg_data = max_pool(g, X)[:, clusters]
+        X = vcat(X, agg_data)
+    end
+    X = pline.output_layer(X)
+    out_data = max_pool(g, X)
+    return out_data
+end
+
+# ---- MapEncoder ----
+struct MapEncoder
+    
+
+
+# ---- LaneletPredictor ----
 struct LaneletPredictor
     actornet::ActorNet_Simp
     vsg::VectorSubGraph
@@ -66,7 +113,7 @@ end
 Flux.@layer LaneletPredictor
 
 function LaneletPredictor(config::Dict)
-    actornet = ActorNet_Simp(config["actor_config"])
+    actornet = ActorNet_Simp(2, [64, 128])
     vsg = VectorSubGraph(config["vsg_in_channel"])
     mapnet = MapNet(config["map_config"])
 

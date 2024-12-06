@@ -40,6 +40,7 @@ include("utils.jl")
 
 
 export ActorNet_Simp,
+       PolylineEncoder,
        LaneletPredictor
 include("lanelet_predictor.jl") 
 

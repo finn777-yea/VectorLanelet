@@ -10,10 +10,6 @@ config["n_map"] = 128           # the output feature dim each lane
 config["num_scales"] = 6
 config["din_actor"] = 2
 
-@testset "Res1d" begin
-    res1d = Res1d(3, 32)
-    @test res1d(rand(Float32, 10, 3, 4)) |> size == (10,32,4)
-end
 @testset "create_residual_block" begin
     res_block = create_residual_block(3, 32, stride=1)
     @test res_block(rand(Float32, 10, 3, 4)) |> size == (10,32,4)
@@ -30,17 +26,21 @@ end
     @test node_encoder(rand(Float32, 3, 10)) |> size == (32,10)
 end
 
-# @testset "create_vector_subgraph" begin
-#     g = GNNGraph([1,2], [2,3], ndata=rand(Float32, 4, 3))
-#     vsg = create_vector_subgraph(g, 4, 32)
-#     @test vsg(g.ndata.x) |> size == (32,)
+@testset "PolylineEncoder" begin
+    # Single graph
+    g = GNNGraph([1,2], [2,3], ndata=rand(Float32, 4, 3))
+    output_channel = 32
+    pline = PolylineEncoder(4, output_channel)
+    @test pline(g, g.ndata.x) |> size == (output_channel,1)
 
-#     data = [rand_graph(3,6, ndata=(;x=rand(Float32, 10, 3))) for _ in 1:10]
-#     g = batch(data)
-#     @assert g.num_graphs == 10
-#     vsg = create_vector_subgraph(g, 10, 32)
-#     @test vsg(g.ndata.x) |> size == (32,10)
-# end
+    # Batch of graphs
+    data = [rand_graph(3,6, ndata=(;x=rand(Float32, 10, 3))) for _ in 1:10]
+    g = batch(data)
+    @assert g.num_graphs == 10
+    pline = PolylineEncoder(10, output_channel)
+    @test pline(g, g.ndata.x) |> size == (output_channel,10)
+
+end
 
 @testset "ActorNet_Simp" begin
     actornet = VectorLanelet.ActorNet_Simp(2, [64, 128])
