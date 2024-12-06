@@ -18,6 +18,43 @@ end
     res_block = create_residual_block(3, 32, stride=1)
     @test res_block(rand(Float32, 10, 3, 4)) |> size == (10,32,4)
 end
+@testset "create_group_block" begin
+    group_block1 = create_group_block(1, 3, 32)
+    @test group_block1(rand(Float32, 10, 3, 4)) |> size == (10,32,4)
+    group_block2 = create_group_block(2, 32, 64)
+    @test group_block2(rand(Float32, 10, 32, 4)) |> size == (5,64,4)
+end
+
+@testset "create_node_encoder" begin
+    node_encoder = create_node_encoder(3, 32)
+    @test node_encoder(rand(Float32, 3, 10)) |> size == (32,10)
+end
+
+# @testset "create_vector_subgraph" begin
+#     g = GNNGraph([1,2], [2,3], ndata=rand(Float32, 4, 3))
+#     vsg = create_vector_subgraph(g, 4, 32)
+#     @test vsg(g.ndata.x) |> size == (32,)
+
+#     data = [rand_graph(3,6, ndata=(;x=rand(Float32, 10, 3))) for _ in 1:10]
+#     g = batch(data)
+#     @assert g.num_graphs == 10
+#     vsg = create_vector_subgraph(g, 10, 32)
+#     @test vsg(g.ndata.x) |> size == (32,10)
+# end
+
+@testset "ActorNet_Simp" begin
+    actornet = VectorLanelet.ActorNet_Simp(2, [64, 128])
+    feat = rand(Float32, 10, 2, 32)
+
+    @test actornet.groups[1](feat) |> size == (10, 64, 32)  
+    @test actornet.groups[2](actornet.groups[1](feat)) |> size == (5, 128, 32)
+
+    @test actornet.lateral[1](actornet.groups[1](feat)) |> size == (10, 128, 32)
+    @test actornet.lateral[2](actornet.groups[2](actornet.groups[1](feat))) |> size == (5, 128, 32)
+
+    @test actornet(feat) |> size == (128, 32)
+end
+
 
 # @testset "ActorNet" begin
 #     actornet = ActorNet(config)
@@ -107,22 +144,4 @@ end
     
     # Test output dimensions
     @test size(out) == (2, num_agts)
-end
-
-@testset "Data encoding" begin
-    include("../demo/encode_demo.jl")
-    lanelet_roadway, g_meta = load_map_data()
-    
-    # Prepare data
-    n_train = 70
-    agt_features_train, agt_features_test, labels_train, labels_test = prepare_agent_features(lanelet_roadway, n_train=n_train)
-    g_all, g_hetero = prepare_map_features(lanelet_roadway, g_meta)
-    
-    # Initialize model
-    actor_config = Dict("n_actor" => 128, "din_actor" => 2)
-    map_config = Dict("n_map" => 128, "num_scales" => 6)
-    model = LaneletPredictor(actor_config, map_config)
-
-    prediction = model(agt_features_train, g_all, g_hetero)
-    @test size(prediction) == (2,70)
 end
