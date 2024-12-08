@@ -7,6 +7,7 @@ Complete model architecture combining all components
 
 # ---- ActorNet_Simp ----
 struct ActorNet_Simp
+    agt_preprocess::Chain
     groups::Chain
     output_block::Chain
     lateral::Chain
@@ -14,9 +15,9 @@ end
 
 Flux.@layer ActorNet_Simp
 
-function ActorNet_Simp(in_channels, group_out_channels::Vector{Int}=[64, 128])
+function ActorNet_Simp(in_channels, group_out_channels::Vector{Int}, agt_features)
+    agt_preprocess = VectorLanelet.create_agt_preprocess_block(agt_features)
     out_channels = group_out_channels[end]
-    num_groups = length(group_out_channels)
     groups = []
     for i in eachindex(group_out_channels)
         if i == 1
@@ -40,10 +41,12 @@ function ActorNet_Simp(in_channels, group_out_channels::Vector{Int}=[64, 128])
 
     output_block = create_residual_block(out_channels, out_channels, stride=1)
 
-    ActorNet_Simp(groups, output_block, lateral)
+    ActorNet_Simp(agt_preprocess, groups, output_block, lateral)
 end
 
 function (actornet::ActorNet_Simp)(agt_features)
+    agt_features = actornet.agt_preprocess(agt_features)
+    @assert size(agt_features, 2) == 2      # x,y
     outputs = Flux.activations(actornet.groups, agt_features)
 
     out = actornet.lateral[end](outputs[end])
@@ -58,13 +61,15 @@ end
 
 # ---- PolylineEncoder ----
 struct PolylineEncoder
+    vec_preprocess::Chain
     layers::Chain
     output_layer::Dense
 end
 
 Flux.@layer PolylineEncoder
 
-function PolylineEncoder(in_channels, out_channels, num_layers::Int=3, hidden_unit::Int=64)
+function PolylineEncoder(in_channels, out_channels, map_features::AbstractMatrix, num_layers::Int=3, hidden_unit::Int=64)
+    vec_preprocess = VectorLanelet.create_map_preprocess_block(map_features)
     layers = []
     for i in 1:num_layers
         push!(layers, create_node_encoder(in_channels, hidden_unit))
@@ -72,7 +77,7 @@ function PolylineEncoder(in_channels, out_channels, num_layers::Int=3, hidden_un
     end
     layers = Chain(layers...)
     output_layer = Dense(hidden_unit * 2, out_channels)
-    PolylineEncoder(layers, output_layer)
+    PolylineEncoder(vec_preprocess, layers, output_layer)
 end
 
 
@@ -81,23 +86,26 @@ Forward pass for PolylineEncoder
     Takes a batch of graphs and node features as input_features
     NodeEncoder -> MaxPooling -> Duplication -> Concatenate -> OutputLayer -> MaxPooling
     
-    - clusters = [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, ...]
+    - g: Fully connected graph, representing a lanelet, with nodes as vectors of centerline
+    - vector_features: (2, num_vectors)
 """
-function (pline::PolylineEncoder)(g::GNNGraph, X::AbstractMatrix)
+function (pline::PolylineEncoder)(g::GNNGraph, vector_features::AbstractMatrix)
+    vector_features = pline.vec_preprocess(vector_features)
     max_pool = GlobalPool(max)
     clusters = graph_indicator(g)
     for layer in pline.layers
-        X = layer(X)
-        agg_data = max_pool(g, X)[:, clusters]
-        X = vcat(X, agg_data)
+        vector_features = layer(vector_features)
+        agg_data = max_pool(g, vector_features)[:, clusters]
+        vector_features = vcat(vector_features, agg_data)
     end
-    X = pline.output_layer(X)
-    out_data = max_pool(g, X)
+    vector_features = pline.output_layer(vector_features)
+    out_data = max_pool(g, vector_features)
     return out_data
 end
 
 # ---- MapEncoder ----
 struct MapEncoder
+end
     
 
 
@@ -112,9 +120,9 @@ end
 
 Flux.@layer LaneletPredictor
 
-function LaneletPredictor(config::Dict)
-    actornet = ActorNet_Simp(2, [64, 128])
-    vsg = VectorSubGraph(config["vsg_in_channel"])
+function LaneletPredictor(config::Dict, agt_features, map_features)
+    actornet = ActorNet_Simp(2, [64, 128], agt_features)
+    ple = PolylineEncoder(2, 64)
     mapnet = MapNet(config["map_config"])
 
     # Transformer setup
@@ -128,17 +136,18 @@ function LaneletPredictor(config::Dict)
         num_layer, relu, num_head, hidden_size, head_hidden_size, intermediate_size)
     pred_head = PredictionHead(hidden_size)
 
-    LaneletPredictor(actornet, vsg, mapnet, transformer, pred_head)
+    LaneletPredictor(actornet, ple, mapnet, transformer, pred_head)
 end
 
 """
 Forward pass for LaneletPredictor
 Takes raw agent features and graph data as input, returns predictions
 """
-function (model::LaneletPredictor)(agt_features, g_all, g_hetero, μ, σ)
+function (model::LaneletPredictor)(agt_features, g_all, g_hetero)
+    agt_features = model.actornet.agt_preprocess(agt_features)
     emb_actor = model.actornet(agt_features)
 
-    emb_lanelets = model.vsg(g_all, g_all.x)
+    emb_lanelets = model.ple(g_all, g_all.x)
     g_hetero = deepcopy(g_hetero)
     g_hetero[:lanelet].x = emb_lanelets
     emb_map = model.mapnet(g_hetero)

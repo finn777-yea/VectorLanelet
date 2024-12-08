@@ -30,29 +30,28 @@ end
     # Single graph
     g = GNNGraph([1,2], [2,3], ndata=rand(Float32, 4, 3))
     output_channel = 32
-    pline = PolylineEncoder(4, output_channel)
+    pline = PolylineEncoder(4, output_channel, g.ndata.x)
     @test pline(g, g.ndata.x) |> size == (output_channel,1)
 
     # Batch of graphs
     data = [rand_graph(3,6, ndata=(;x=rand(Float32, 10, 3))) for _ in 1:10]
     g = batch(data)
     @assert g.num_graphs == 10
-    pline = PolylineEncoder(10, output_channel)
+    pline = PolylineEncoder(10, output_channel, g.ndata.x)
     @test pline(g, g.ndata.x) |> size == (output_channel,10)
 
 end
 
 @testset "ActorNet_Simp" begin
-    actornet = VectorLanelet.ActorNet_Simp(2, [64, 128])
-    feat = rand(Float32, 10, 2, 32)
+    agt_features = rand(Float32, 10, 2, 32)
+    actornet = VectorLanelet.ActorNet_Simp(2, [64, 128], agt_features)
 
-    @test actornet.groups[1](feat) |> size == (10, 64, 32)  
-    @test actornet.groups[2](actornet.groups[1](feat)) |> size == (5, 128, 32)
+    @test actornet.groups[1](agt_features) |> size == (10, 64, 32)  
+    @test actornet.groups[2](actornet.groups[1](agt_features)) |> size == (5, 128, 32)
 
-    @test actornet.lateral[1](actornet.groups[1](feat)) |> size == (10, 128, 32)
-    @test actornet.lateral[2](actornet.groups[2](actornet.groups[1](feat))) |> size == (5, 128, 32)
-
-    @test actornet(feat) |> size == (128, 32)
+    @test actornet.lateral[1](actornet.groups[1](agt_features)) |> size == (10, 128, 32)
+    @test actornet.lateral[2](actornet.groups[2](actornet.groups[1](agt_features))) |> size == (5, 128, 32)
+    @test actornet(agt_features) |> size == (128, 32)
 end
 
 

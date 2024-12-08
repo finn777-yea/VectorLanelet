@@ -67,3 +67,26 @@ function create_node_encoder(in_channels, out_channels, norm="layernorm")
     encoder = Chain(residual, relu)
     return encoder
 end
+
+"""
+    agent input features: (2, channels, B)
+    map input features: (channels, num_vectors)
+"""
+function create_agt_preprocess_block(agt_features)
+    input_μ, input_σ = VectorLanelet.calculate_mean_and_std(agt_features; dims=(1,3))
+
+    preprocess = Chain(
+        Base.Fix2(.-, input_μ),
+        Base.Fix2(./, input_σ)
+    )
+    return preprocess
+end
+
+function create_map_preprocess_block(map_features)
+    input_μ, input_σ = VectorLanelet.calculate_mean_and_std(map_features; dims=2)
+    preprocess = Chain(
+        Base.Fix2(.-, input_μ),
+        Base.Fix2(./, input_σ)
+    )
+    return preprocess
+end
