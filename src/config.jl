@@ -10,7 +10,7 @@ config["transformer_num_layer"] = 3
 config["transformer_hidden_size"] = 128
 config["transformer_num_head"] = 4
 
-config["learning_rate"] = 1e-4
-config["num_epochs"] = 100
-config["batch_size"] = 16
-config["use_cuda"] = false
+config["learning_rate"] = 1e-3
+config["num_epochs"] = 200
+config["batch_size"] = 32
+config["use_cuda"] = true

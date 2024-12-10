@@ -31,16 +31,12 @@ include("layers_remaster.jl")
 export VectorSubGraph
 include("vectorSubgraph.jl")
 
-
-export MapNet
-include("mapnet.jl")
-
 export extract_gml_src_dst
 include("utils.jl")
 
-
 export ActorNet_Simp,
        PolylineEncoder,
+       MapEncoder,
        LaneletPredictor
 include("lanelet_predictor.jl") 
 

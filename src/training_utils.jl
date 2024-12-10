@@ -1,10 +1,11 @@
 using Logging
 using Wandb
+using JLD2
 
-function logging_callback(logger, type, epoch, mse; log_step_increment)
+function logging_callback(logger, type, epoch, mse, mae; log_step_increment)
     with_logger(logger) do
-        @info "$type/info" epoch = epoch log_step_increment = log_step_increment
-        @info "$type/loss" mse = mse log_step_increment = 0
+        @info "$type/info" epoch = epoch log_step_increment = 0
+        @info "$type/loss" mse = mse mae = mae log_step_increment = log_step_increment
     end
 end
 
@@ -21,9 +22,14 @@ Loss function for the model
 - `σ`: std of the agt feature distribution
 """
 
-# TODO: add mae
-# TODO: add accuracy
-function loss_fn(model, x, y, g_all, g_hetero, μ, σ)
-    pred = model(x, g_all, g_hetero, μ, σ)
-    return Flux.mse(pred, y)
+function loss_fn(model, x, y, g_polyline, g_heteromap)
+    pred = model(x, g_polyline, g_heteromap)
+    mse = Flux.mse(pred, y)
+    mae = Flux.mae(pred, y)
+    return mse, mae
+end
+
+function save_model_state(model, path)
+    model_state = Flux.state(model)
+    jldsave(path; model_state)
 end

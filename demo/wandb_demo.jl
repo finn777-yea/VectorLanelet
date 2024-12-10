@@ -14,6 +14,7 @@ with_logger(lg) do
         loss = 10 - log(1 + x + rand() + x * get_config(lg, "learning_rate") + rand())
         # Log metrics from your script to W&B
         @info "metrics" accuracy=acc loss=loss
-        @info "foo" x=x
+        @info "epoch" epoch=x log_step_increment=2
     end
 end
+close(lg)

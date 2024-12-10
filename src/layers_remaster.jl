@@ -79,14 +79,30 @@ function create_agt_preprocess_block(agt_features)
         Base.Fix2(.-, input_μ),
         Base.Fix2(./, input_σ)
     )
-    return preprocess
+    return preprocess, reshape(input_μ,:), reshape(input_σ,:)
 end
 
-function create_map_preprocess_block(map_features)
-    input_μ, input_σ = VectorLanelet.calculate_mean_and_std(map_features; dims=2)
+function create_map_preprocess_block(vector_features)
+    input_μ, input_σ = VectorLanelet.calculate_mean_and_std(vector_features; dims=2)
     preprocess = Chain(
         Base.Fix2(.-, input_μ),
         Base.Fix2(./, input_σ)
     )
     return preprocess
+end
+
+function create_hetero_conv(in_channels, out_channels)
+    left_rel = (:lanelet, :left, :lanelet)
+    right_rel = (:lanelet, :right, :lanelet)
+    adj_left_rel = (:lanelet, :adj_left, :lanelet)
+    adj_right_rel = (:lanelet, :adj_right, :lanelet)
+    suc_rel = (:lanelet, :suc, :lanelet)
+    
+    heteroconv = HeteroGraphConv(
+        left_rel => GATConv(in_channels=>out_channels),
+        right_rel => GATConv(in_channels=>out_channels),
+        adj_left_rel => GATConv(in_channels=>out_channels),
+        adj_right_rel => GATConv(in_channels=>out_channels),
+        suc_rel => GATConv(in_channels=>out_channels)
+    )
 end
