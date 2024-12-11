@@ -21,7 +21,7 @@ Load and prepare the lanelet map and graph data
 function load_map_data()
     # Load the lanelet map
     example_file = joinpath(@__DIR__, "../res","location0.osm")
-    projector = Projection.UtmProjector(Lanelet2.Io.Origin(49, 8.4))
+    projector = Projection.UtmProjector(Lanelet2.Io.Origin(50.99, 6.90))
     llmap = Lanelet2.Io.load(example_file, projector)
 
     # Use passable lanelet submap
