@@ -69,26 +69,60 @@ function create_node_encoder(in_channels, out_channels, norm="layernorm")
 end
 
 """
-    agent input features: (2, channels, B)
-    map input features: (channels, num_vectors)
+    Preprocess block for agent features
+    μ: (2, )
+    σ: (2, )
+    μ and σ are computed from the map features(vector-level)
+    map features: (4, num_vectors) channels: x_start, y_start, x_end, y_end
+
+    1. normalize agent features to zero mean and unit variance
+    2. transpose agent features for subsequent convolution
 """
-function create_agt_preprocess_block(agt_features)
-    input_μ, input_σ = VectorLanelet.calculate_mean_and_std(agt_features; dims=(1,3))
-
+function create_agt_preprocess_block(μ, σ)
     preprocess = Chain(
-        Base.Fix2(.-, input_μ),
-        Base.Fix2(./, input_σ)
-    )
-    return preprocess, reshape(input_μ,:), reshape(input_σ,:)
-end
-
-function create_map_preprocess_block(vector_features)
-    input_μ, input_σ = VectorLanelet.calculate_mean_and_std(vector_features; dims=2)
-    preprocess = Chain(
-        Base.Fix2(.-, input_μ),
-        Base.Fix2(./, input_σ)
+        Base.Fix2(.-, μ),
+        Base.Fix2(./, σ),
+        x -> permutedims(x, (2, 1, 3))
     )
     return preprocess
+end
+
+# vector features: (4, B)
+function create_map_preprocess_block(μ, σ)
+    # Reshape μ and σ to be aligned with the dimension of vector features
+    # TODO: generalize repeat times
+    μ = repeat(μ, 2)
+    σ = repeat(σ, 2)
+
+    preprocess = Chain(
+        Base.Fix2(.-, μ),
+        Base.Fix2(./, σ)
+    )
+    return preprocess
+end
+
+function create_transformer_block(num_layer, hidden_size, num_head)
+    head_hidden_size = div(hidden_size, num_head)
+    intermediate_size = 2hidden_size
+
+    transformer = Transformer(
+        Layers.TransformerBlock,        # Transformer encoder block
+        num_layer, 
+        relu, 
+        num_head, 
+        hidden_size, 
+        head_hidden_size, 
+        intermediate_size
+    )
+    return transformer
+end
+
+function create_inverse_normalization_block(μ, σ)
+    inverse_normalize = Chain(
+        Base.Fix2(.*, σ),
+        Base.Fix2(.+, μ)
+    )
+    return inverse_normalize
 end
 
 function create_hetero_conv(in_channels, out_channels)
@@ -104,5 +138,17 @@ function create_hetero_conv(in_channels, out_channels)
         adj_left_rel => GATConv(in_channels=>out_channels),
         adj_right_rel => GATConv(in_channels=>out_channels),
         suc_rel => GATConv(in_channels=>out_channels)
+    )
+end
+
+function create_prediction_head(input_dim::Int, μ, σ)
+    dense = Dense(input_dim => 2)
+    postprocess = Chain(
+        Base.Fix2(.*, σ),
+        Base.Fix2(.+, μ)
+    )
+    return Chain(
+        dense,
+        postprocess
     )
 end

@@ -21,7 +21,12 @@ include("layers.jl")
 
 export create_residual_block,
        create_group_block,
-       create_node_encoder
+       create_node_encoder,
+       create_hetero_conv,
+       create_agt_preprocess_block,
+       create_map_preprocess_block,
+       create_transformer_block,
+       create_prediction_head
 include("layers_remaster.jl")
 
 # export create_actor_net,

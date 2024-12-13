@@ -10,8 +10,12 @@ function extract_gml_src_dst(g, rel_type::String)
     return src_list, dst_list
 end
 
-function calculate_mean_and_std(data; dims)
-    μ = mean(data, dims=dims)
-    σ = std(data, dims=dims)
+"""
+    Calculate the mean and standard deviation using map features(x, y coordinates)
+    data: (2, num_vectors)
+"""
+function calculate_mean_and_std(data; dims=2)
+    μ = mean(data, dims=dims) |> vec
+    σ = std(data, dims=dims) |> vec
     return μ, σ
 end

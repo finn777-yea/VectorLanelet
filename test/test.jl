@@ -30,27 +30,47 @@ end
     # Single graph
     g = GNNGraph([1,2], [2,3], ndata=rand(Float32, 4, 3))
     output_channel = 32
-    pline = PolylineEncoder(4, output_channel, g.ndata.x)
+    μ = rand(Float32, 2)
+    σ = rand(Float32, 2)
+    pline = PolylineEncoder(4, output_channel, μ, σ)
     @test pline(g, g.ndata.x) |> size == (output_channel,1)
 
     # Batch of graphs
-    data = [rand_graph(3,6, ndata=(;x=rand(Float32, 10, 3))) for _ in 1:10]
+    data = [rand_graph(3,6, ndata=(;x=rand(Float32, 4, 3))) for _ in 1:10]
     g = batch(data)
     @assert g.num_graphs == 10
-    pline = PolylineEncoder(10, output_channel, g.ndata.x)
-    @test pline(g, g.ndata.x) |> size == (output_channel,10)
-
+    pline = PolylineEncoder(4, output_channel, μ, σ)
+    @test pline(g, g.ndata.x) |> size == (output_channel, 10)
 end
 
 @testset "ActorNet_Simp" begin
-    agt_features = rand(Float32, 10, 2, 32)
-    actornet = VectorLanelet.ActorNet_Simp(2, [64, 128], agt_features)
+    agt_features = rand(Float32, 2, 10, 32)
+    μ = rand(Float32, 2)
+    σ = rand(Float32, 2)
+    actornet = VectorLanelet.ActorNet_Simp(2, [64, 128], μ, σ)
 
-    @test actornet.groups[1](agt_features) |> size == (10, 64, 32)  
-    @test actornet.groups[2](actornet.groups[1](agt_features)) |> size == (5, 128, 32)
+    @test actornet.agt_preprocess(agt_features) |> size == (10, 2, 32)
 
-    @test actornet.lateral[1](actornet.groups[1](agt_features)) |> size == (10, 128, 32)
-    @test actornet.lateral[2](actornet.groups[2](actornet.groups[1](agt_features))) |> size == (5, 128, 32)
+    @test actornet.groups[1](actornet.agt_preprocess(agt_features)) |> size == (10, 64, 32)
+    @test actornet.groups[2](
+        actornet.groups[1](
+            actornet.agt_preprocess(agt_features)
+        )
+    ) |> size == (5, 128, 32)
+
+    @test actornet.lateral[1](
+        actornet.groups[1](
+            actornet.agt_preprocess(agt_features)
+        )
+    ) |> size == (10, 128, 32)
+    
+    @test actornet.lateral[2](
+        actornet.groups[2](
+            actornet.groups[1](
+                actornet.agt_preprocess(agt_features)
+            )
+        )
+    ) |> size == (5, 128, 32)
     @test actornet(agt_features) |> size == (128, 32)
 end
 
@@ -80,12 +100,12 @@ end
     # Test input dimensions
     num_agts = 32
     num_timesteps = 2
-    agt_features = rand(Float32, num_timesteps, 2, num_agts)  # (timesteps, features, batch)
+    agt_features = rand(Float32, 2, num_timesteps, num_agts)
     
     g1 = GNNGraph([1,2], [2,3], ndata=rand(Float32, 4, 3))
     g2 = GNNGraph([1,2,4], [2,3,1], ndata=rand(Float32, 4, 4))
     g_polyline = batch([g1, g2])
-    map_features = g_polyline.ndata.x
+    vector_features = g_polyline.ndata.x
     g_heteromap = GNNHeteroGraph(
         (:lanelet, :left, :lanelet) => ([1], [2]),
         (:lanelet, :right, :lanelet) => ([1], [2]),
@@ -96,7 +116,8 @@ end
         )
         
     # Test forward pass
-    model = LaneletPredictor(agt_features, map_features)
+    μ, σ = VectorLanelet.calculate_mean_and_std(vector_features[1:2, :]; dims=2)
+    model = LaneletPredictor(μ, σ)
     out = model(agt_features, g_polyline, g_heteromap)
     
     # Test output dimensions

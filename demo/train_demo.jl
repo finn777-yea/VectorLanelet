@@ -14,15 +14,15 @@ using Statistics
 using MLUtils
 
 using Wandb, Logging, Dates
-
+using JLD2
 """
 Load and prepare the lanelet map and graph data
 """
 function load_map_data()
     # Load the lanelet map
-    example_file = joinpath(@__DIR__, "../res","location0.osm")
+    location0_file = joinpath(@__DIR__, "../res","location0.osm")
     projector = Projection.UtmProjector(Lanelet2.Io.Origin(50.99, 6.90))
-    llmap = Lanelet2.Io.load(example_file, projector)
+    llmap = Lanelet2.Io.load(location0_file, projector)
 
     # Use passable lanelet submap
     traffic_rules = TrafficRules.create(TrafficRules.Locations.Germany, TrafficRules.Participants.Vehicle)
@@ -41,44 +41,41 @@ end
 
 """
 Prepare agent features and labels from lanelet centerlines
+    - agent features: (2, 2, B)   (channels, time_step, batch_size)
+    - labels: (2, B)            (channels, batch_size)
+
 """
-function prepare_agent_features(lanelet_roadway::LaneletRoadway)
-    agt_features = Vector{Matrix{Float64}}()
-    pos_agt = Vector{Vector{Float64}}()
-    labels = Vector{Vector{Float64}}()
+function prepare_agent_features(lanelet_roadway::LaneletRoadway, save_features::Bool=false)
+    agt_features = Vector{Matrix{Float32}}()
+    pos_agt = Vector{Vector{Float32}}()
+    labels = Vector{Vector{Float32}}()
     for lanelet in values(lanelet_roadway.lanelets)
         curve = lanelet.curve
-        push!(agt_features, hcat([curve[1].pos.x, curve[1].pos.y], [curve[2].pos.x, curve[2].pos.y])')
+        push!(agt_features, hcat([curve[1].pos.x, curve[1].pos.y], [curve[2].pos.x, curve[2].pos.y]))
         push!(pos_agt, [curve[2].pos.x, curve[2].pos.y])
         push!(labels, [curve[end].pos.x, curve[end].pos.y])
     end
 
-    agt_features = Float32.(cat(agt_features..., dims=3))
-    
-    # Normalize agent features to zero mean and unit variance
-    # μ, σ = VectorLanelet.calculate_mean_and_std(agt_features; dims=(1,3))       # μ and σ of size (1,2,1)
-    # agt_features = (agt_features .- μ) ./ σ
+    agt_features = cat(agt_features..., dims=3)
+    pos_agt = hcat(pos_agt...)
+    labels = hcat(labels...)
 
-    labels = Float32.(hcat(labels...))
-    
-    
-    # labels_train = labels[:,1:n_train]
-    # labels_test = labels[:,n_train+1:end]
+    if save_features
+        # Save the agent features
+        cache_path = joinpath(@__DIR__, "../res/agent_features.jld2")
+        @info "Saving agent features to $(cache_path)"
+        jldsave(cache_path, agt_features=agt_features, labels=labels)
+    end
 
-
-    # labels_train = labels[:,1:n_train]
-    # labels_test = labels[:,n_train+1:end]
-
-    # Reshape the μ and σ to Vector
-    # μ = reshape(μ,:)
-    # σ = reshape(σ,:)
-    return agt_features, labels
+    return agt_features, pos_agt, labels
 end
 
 """
 Prepare map features stored in polyline level GNNGraph(fulled-connected graph)
+    vector features: (4, num_vectors) -> polyline_graphs.x
+    routing_graph -> g_heteromap
 """
-function prepare_map_features(lanelet_roadway, g_meta)
+function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false)
     polyline_graphs = GNNGraph[]
     llt_pos = []
 
@@ -93,12 +90,12 @@ function prepare_map_features(lanelet_roadway, g_meta)
         v == 14 && @assert lanelet.tag == LaneletTag(1707, false)
         
         centerline = lanelet.curve
-        num_nodes = length(centerline) - 1
-        g_fc = complete_digraph(num_nodes) |> GNNGraph
+        num_vectors = length(centerline) - 1
+        g_fc = complete_digraph(num_vectors) |> GNNGraph
         
         # Iterate over points in centerline to get vector-level features
         polyline_features = []
-        for i in 1:num_nodes
+        for i in 1:num_vectors
             # Get start and end points of each polyline segment
             start_point = centerline[i]
             end_point = centerline[i+1]
@@ -113,51 +110,62 @@ function prepare_map_features(lanelet_roadway, g_meta)
             push!(polyline_features, Float32[start_x, start_y, end_x, end_y])
         end
         # Convert to matrix format
-        polyline_features = reduce(hcat, polyline_features)       # feature matrix:(4, num_nodes)
-        
-        # Normalize polyline features to zero mean and unit variance
-        # μ_reshaped = repeat(cpu(μ), 2)
-        # σ_reshaped = repeat(cpu(σ), 2)
-        # polyline_features = (polyline_features .- μ_reshaped) ./ σ_reshaped
+        polyline_features = reduce(hcat, polyline_features)       # feature matrix:(4, num_vectors)
         
         g_fc.ndata.x = polyline_features
         push!(polyline_graphs, g_fc)
     end
 
     # Create heterogeneous graph
-    g_polyline = batch(polyline_graphs)
-    @assert size(g_polyline.x, 1) == 4
-    @assert g_polyline.num_graphs == nv(g_meta)
+    polyline_graphs = batch(polyline_graphs)
+    @assert size(polyline_graphs.x, 1) == 4
+    @assert polyline_graphs.num_graphs == nv(g_meta)
+
+    # Compute the mean and std
+    # Only use the start x and start y of each vector
+    μ, σ = VectorLanelet.calculate_mean_and_std(polyline_graphs.x[1:2, :]; dims=2)
+    @assert size(μ) == (2,)
+    @assert size(σ) == (2,)
+    
     g_heteromap = GNNHeteroGraph(
         (:lanelet, :right, :lanelet) => extract_gml_src_dst(g_meta, "Right"),
         (:lanelet, :left, :lanelet) => extract_gml_src_dst(g_meta, "Left"),
         (:lanelet, :suc, :lanelet) => extract_gml_src_dst(g_meta, "Successor"),
         (:lanelet, :adj_left, :lanelet) => extract_gml_src_dst(g_meta, "AdjacentLeft"),
         (:lanelet, :adj_right, :lanelet) => extract_gml_src_dst(g_meta, "AdjacentRight")
-    )
+        )
     
-    return g_polyline, g_heteromap
+    if save_features
+        # Save the map features
+        cache_path = joinpath(@__DIR__, "../res/map_features.jld2")
+        @info "Saving map features to $(cache_path)"
+        jldsave(cache_path, map_features=polyline_graphs.x,
+        polyline_graphs=polyline_graphs, g_heteromap=g_heteromap, μ=μ, σ=σ)
+    end
+    
+    return polyline_graphs, g_heteromap, μ, σ
 end
 
-function run_training(wblogger::WandbLogger, config::Dict{String, Any})
+function run_training(wblogger::WandbLogger, config::Dict{String, Any}, save_model::Bool=false)
     device = config["use_cuda"] ? gpu : cpu
     lanelet_roadway, g_meta = load_map_data()
     
     # Prepare data
     @info "Preparing agent features on $(device)"
-    agt_features, labels = prepare_agent_features(lanelet_roadway) |> device
+    agt_features, pos_agt, labels = prepare_agent_features(lanelet_roadway) |> device
     @info "Preparing map features on $(device)"
-    g_polyline, g_heteromap = prepare_map_features(lanelet_roadway, g_meta) |> device
+    polyline_graphs, g_heteromap, μ, σ = prepare_map_features(lanelet_roadway, g_meta) |> device
     
     # Initialize model
     @info "Initializing model and moving to $(device)"
-    model = LaneletPredictor(agt_features, g_polyline.x) |> device
+    model = LaneletPredictor(μ, σ) |> device
     
     # Training setup
     opt = Flux.setup(Adam(config["learning_rate"]), model)
     num_epochs = config["num_epochs"]
 
     # Split training data
+    labels = pos_agt
     train_data, val_data = splitobs((agt_features, labels), at=0.9)
     
     train_loader = Flux.DataLoader(
@@ -170,7 +178,7 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
     for (type, data) in ("train" => train_data, "val" => val_data)
         let (x, y) = data
             Flux.reset!(model)
-            loss = loss_fn(model, x, y, g_polyline, g_heteromap)
+            loss = loss_fn(model, x, y, polyline_graphs, g_heteromap)
             epoch = 0
             logging_callback(wblogger, type, epoch, cpu(loss)..., log_step_increment=0)
         end
@@ -184,7 +192,7 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
         # Training
         for (x, y) in train_loader
             loss, grad = Flux.withgradient(model) do m
-                loss_fn(m, x, y, g_polyline, g_heteromap)
+                loss_fn(m, x, y, polyline_graphs, g_heteromap)
             end
             
             Flux.update!(opt, model, grad[1])
@@ -195,7 +203,7 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
         # Validation
         let (x, y) = val_data
             Flux.reset!(model)
-            values = loss_fn(model, x, y, g_polyline, g_heteromap)
+            values = loss_fn(model, x, y, polyline_graphs, g_heteromap)
 
             # logging
             logging_callback(wblogger, "val", epoch, cpu(values)..., log_step_increment=length(y))
@@ -203,10 +211,12 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
 
     end
     
-    # Save the trained model
-    @info "Saving the trained model state"
-    model_path = joinpath(@__DIR__, "../models/model_$(now()).jld2")
-    save_model_state(model, model_path)
+    if save_model   
+        # Save the trained model
+        @info "Saving the trained model state"
+        model_path = joinpath(@__DIR__, "../models/model_$(now()).jld2")
+        save_model_state(cpu(model), model_path)
+    end
 end
 
 

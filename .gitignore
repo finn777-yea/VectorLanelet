@@ -6,3 +6,5 @@ wandb
 src/create_model.jl
 src/vectorSubgraph.jl
 src/layers.jl
+
+*.jld2
