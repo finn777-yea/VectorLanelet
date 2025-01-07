@@ -11,8 +11,11 @@ config["num_scales"] = 6
 config["din_actor"] = 2
 
 @testset "create_residual_block" begin
-    res_block = create_residual_block(3, 32, stride=1)
+    res_block = create_residual_block(3, 32, kernel_size=3, stride=1)
     @test res_block(rand(Float32, 10, 3, 4)) |> size == (10,32,4)
+
+    res_block = create_residual_block(3, 32, kernel_size=3, stride=2)
+    @test res_block(rand(Float32, 10, 3, 4)) |> size == (5,32,4)
 end
 @testset "create_group_block" begin
     group_block1 = create_group_block(1, 3, 32)
@@ -49,9 +52,13 @@ end
     σ = rand(Float32, 2)
     actornet = VectorLanelet.ActorNet_Simp(2, [64, 128], μ, σ)
 
+    # Normalization and reshaping
     @test actornet.agt_preprocess(agt_features) |> size == (10, 2, 32)
 
+    # Group 1 doesn't change timesteps
     @test actornet.groups[1](actornet.agt_preprocess(agt_features)) |> size == (10, 64, 32)
+    
+    # Group 2 reduces timesteps by half
     @test actornet.groups[2](
         actornet.groups[1](
             actornet.agt_preprocess(agt_features)
@@ -122,4 +129,13 @@ end
     
     # Test output dimensions
     @test size(out) == (2, num_agts)
+end
+
+@testset "SpatialAttention" begin
+    agt_features = rand(Float32, 64, 32)
+    ctx_features = rand(Float32, 64, 32)
+    agt_pos = rand(Float32, 2, 32)
+    ctx_pos = rand(Float32, 2, 32)
+    att = VectorLanelet.SpatialAttention(32, 32, 32)
+    @test att(agt_features, ctx_features, agt_pos, ctx_pos) |> size == (32, 32)
 end

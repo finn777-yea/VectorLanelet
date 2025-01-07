@@ -20,5 +20,5 @@ model_state_path = joinpath(@__DIR__, "../res/model_state.jld2")
 jldsave(model_state_path; model_state)
 
 loaded_model_state = JLD2.load(model_state_path, "model_state")
-model = LaneletPredictor(config)
+model = LaneletPredictor(config, μ, σ)
 Flux.loadmodel!(model, loaded_model_state)

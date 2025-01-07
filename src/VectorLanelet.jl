@@ -12,6 +12,8 @@ using Graphs
 using MetaGraphs
 using Transformers
 using Statistics
+using LinearAlgebra
+using Plots
 
 export Res1d,
        Conv1d,
@@ -33,8 +35,8 @@ include("layers_remaster.jl")
 #        create_vector_subgraph
 # include("create_model.jl")
 
-export VectorSubGraph
-include("vectorSubgraph.jl")
+# export VectorSubGraph
+# include("vectorSubgraph.jl")
 
 export extract_gml_src_dst
 include("utils.jl")
@@ -45,7 +47,15 @@ export ActorNet_Simp,
        LaneletPredictor
 include("lanelet_predictor.jl") 
 
-export logging_callback, loss_fn, save_model_state
+export logging_callback,
+       save_model_state,
+       load_map_data,
+       prepare_agent_features,
+       prepare_map_features
 include("training_utils.jl")
+
+# Export spatial attention functionality
+export create_distance_mask
+include("spatial_attention.jl")
 
 end     # VectorLanelet

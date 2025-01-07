@@ -28,7 +28,7 @@ for lanelet in values(lanelet_roadway.lanelets)
     curve = lanelet.curve
     point1 = [curve[1].pos.x, curve[1].pos.y]
     point2 = [curve[2].pos.x, curve[2].pos.y]       # the current position of the agt
-    point_e = [curve[end].pos.x, curve[end].pos.y]
+    point_e = [curve[end].pos.x, curve[end].pros.y]
 
     push!(agt_features, hcat(point1, point2))
     push!(pos_agt, point2)

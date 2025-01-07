@@ -1,4 +1,4 @@
-function create_residual_block(in_channels , out_channels; kernel_size=2, stride, norm="GN", ng=32, act=true)
+function create_residual_block(in_channels , out_channels; kernel_size=3, stride, norm="GN", ng=32, act=true)
     filter = (kernel_size,)
     
     # Main convolution branch
@@ -35,13 +35,13 @@ Each group contains a first layer with stride 2 and the following layers with st
     - input_channels: input channels of the group
     - output_channels: output channels of the group
 """
-function create_group_block(i, input_channels, output_channels)
+function create_group_block(i, input_channels, output_channels; kernel_size=3, norm="GN")
     first_layer = if i == 1
-        create_residual_block(input_channels, output_channels, stride=1)
+        create_residual_block(input_channels, output_channels, kernel_size=kernel_size, stride=1, norm=norm)
     else
-        create_residual_block(input_channels, output_channels, stride=2)
+        create_residual_block(input_channels, output_channels, kernel_size=kernel_size, stride=2, norm=norm)
     end
-    second_layer = create_residual_block(output_channels, output_channels, stride=1)
+    second_layer = create_residual_block(output_channels, output_channels, kernel_size=kernel_size, stride=1, norm=norm)
     return Chain(first_layer, second_layer)
 end
 
@@ -49,7 +49,6 @@ end
     Encoder for the node features at vector level
     Contains 2 dense layers and batch/layer normalization
 """
-
 function create_node_encoder(in_channels, out_channels, norm="layernorm")
     norm_layer = norm == "layernorm" ? LayerNorm : BatchNorm
     linear1 = Dense(in_channels, out_channels)
@@ -117,13 +116,19 @@ function create_transformer_block(num_layer, hidden_size, num_head)
     return transformer
 end
 
-function create_inverse_normalization_block(μ, σ)
-    inverse_normalize = Chain(
-        Base.Fix2(.*, σ),
-        Base.Fix2(.+, μ)
-    )
-    return inverse_normalize
-end
+# function create_attention_block(hidden_size; nheads=2)
+#     dense = Dense(hidden_size => hidden_size)
+#     attention = MultiHeadAttention(hidden_size, nheads=nheads)
+#     return Chain(dense, attention)
+# end
+
+# function create_inverse_normalization_block(μ, σ)
+#     inverse_normalize = Chain(
+#         Base.Fix2(.*, σ),
+#         Base.Fix2(.+, μ)
+#     )
+#     return inverse_normalize
+# end
 
 function create_hetero_conv(in_channels, out_channels)
     left_rel = (:lanelet, :left, :lanelet)
