@@ -130,12 +130,12 @@ end
     # Test output dimensions
     @test size(out) == (2, num_agts)
 end
+@testset "LaneletFusionPred" begin
+    include("../src/config.jl")
+    lanelet_roadway, g_meta = VectorLanelet.load_map_data()
+    agt_features, pos_agt, labels = VectorLanelet.prepare_agent_features(lanelet_roadway)
+    polyline_graphs, g_heteromap, pos_llt, μ, σ = VectorLanelet.prepare_map_features(lanelet_roadway, g_meta)
 
-@testset "SpatialAttention" begin
-    agt_features = rand(Float32, 64, 32)
-    ctx_features = rand(Float32, 64, 32)
-    agt_pos = rand(Float32, 2, 32)
-    ctx_pos = rand(Float32, 2, 32)
-    att = VectorLanelet.SpatialAttention(32, 32, 32)
-    @test att(agt_features, ctx_features, agt_pos, ctx_pos) |> size == (32, 32)
+    model = LaneletFusionPred(config, μ, σ)
+    @test model(agt_features, agt_pos, polyline_graphs, g_heteromap, pos_llt) |> size == (2, 32)
 end

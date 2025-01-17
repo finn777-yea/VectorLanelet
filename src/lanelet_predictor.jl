@@ -110,7 +110,7 @@ end
 
 Flux.@layer MapEncoder
 
-function MapEncoder(in_channels::Int=64, out_channels::Int=64, num_layers::Int=4)
+function MapEncoder(in_channels::Int=64, out_channels::Int=64, num_layers::Int=4; ng=32)
     layers = []
     
     for _ in 1:num_layers
@@ -209,119 +209,4 @@ function (model::LaneletPredictor)(agt_features::AbstractArray, polyline_graphs:
     predictions = model.pred_head(emb_fuse[:, 1:size(emb_actor, 2)])     # Only take agent features for prediction
 
     return predictions
-end
-
-
-
-# ------ SpatialAttention ------
-struct SpatialAttention
-    agt
-    dist
-    query
-    ctx
-    out
-    norm
-end
-
-Flux.@layer SpatialAttention
-
-function SpatialAttention(agt_dim::Int, ctx_dim::Int)
-    ng = 1
-
-    agt = Dense(agt_dim => ctx_dim, bias=false)
-    
-    dist = Chain(
-        Dense(2 => ctx_dim),
-        relu,
-        Dense(ctx_dim => ctx_dim),
-        GroupNorm(ctx_dim, gcd(ng, ctx_dim)),
-        relu
-    )
-    
-    query = Chain(
-        Dense(agt_dim => ctx_dim),
-        GroupNorm(ctx_dim, gcd(ng, ctx_dim)),
-        relu
-    )
-
-    ctx = Chain(
-        Dense(3*ctx_dim => agt_dim),
-        GroupNorm(agt_dim, gcd(ng, agt_dim)),
-        relu,
-        Dense(agt_dim => agt_dim, bias=false)
-    )
-
-    out = Chain(
-        Dense(ctx_dim => agt_dim),
-        GroupNorm(agt_dim, gcd(ng, agt_dim))
-    )
-    norm = GroupNorm(agt_dim, gcd(ng, agt_dim))
-    SpatialAttention(agt, dist, query, ctx, out, norm)
-end
-
-"""
-    agt_features: (agt_channels, timesteps, num_agents)
-    ctx_features: (ctx_channels, num_lanelets)
-    agt_pos: (2, num_agts)        # num_agents in one batch
-    ctx_pos: (2, num_ctxs)      # num_lanelets in total
-
-    Returns:
-    - updated_agt_features: (agt_channels, num_agents)
-"""
-function (att::SpatialAttention)(agts::AbstractArray, ctxs::AbstractArray, agt_pos::AbstractArray, ctx_pos::AbstractArray)
-    res = agts
-    
-    # Handle empty context case
-    if size(ctxs, 2) == 0
-        agts = att.agt(agts)
-        agts = relu.(agts)
-        agts = att.out(agts)
-        agts = agts + res
-        agts = relu.(agts)
-        return agts
-    end
-    
-    # Calculate distance between agt and ctx
-    # TODO: Add distance threshold here
-    dist = reshape(agt_pos, (2, :, 1)) .- reshape(ctx_pos, (2, 1, :))       # (2, num_agts, num_ctx)
-    dist = reshape(dist, (2, :))    # (2, num_agts*num_ctx)
-    dist = att.dist(dist)   # (ctx_dim, num_agts*num_ctx)
-    
-    # Get query features from agents and expand
-    query = att.query(agts)
-    query = reshape(query, (:, :, 1))
-    query = repeat(query, 1, 1, num_ctx)
-    
-    # Expand context features
-    # Result: (n_ctx, num_agents, num_contexts)
-    ctx_expanded = reshape(ctxs, (:, 1, :))
-    ctx_expanded = repeat(ctx_expanded, 1, num_agents, 1)
-    
-    # Concatenate distance, query and context features along feature dimension
-    # Result: (3*n_ctx, num_agents, num_contexts)
-    ctx_combined = vcat(dist, query, ctx_expanded)
-    
-    # Process through context network
-    # Reshape to (3*n_ctx, num_pairs) for the network
-    ctx_combined = reshape(ctx_combined, (:, :))
-    ctx_combined = att.ctx(ctx_combined)
-    # Reshape back to (n_agt, num_agents, num_contexts)
-    ctx_combined = reshape(ctx_combined, (:, num_agents, num_ctx))
-    
-    # Sum over context dimension
-    ctx_combined = sum(ctx_combined, dims=3)
-    ctx_combined = dropdims(ctx_combined, dims=3)
-    
-    # Process agent features
-    agts = att.agt(agts)
-    agts = agts + ctx_combined
-    agts = att.norm(agts)
-    agts = relu.(agts)
-    
-    # Final linear layer with residual connection
-    agts = att.out(agts)
-    agts = agts + res
-    agts = relu.(agts)
-    
-    return agts
 end

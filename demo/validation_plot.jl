@@ -18,6 +18,7 @@ function setup_model(config::Dict{String, Any}, model_state_name::String)
     
     # 2. Initialize model on CPU with the same parameters used during training
     model = LaneletPredictor(config, μ, σ)
+    Flux.testmode!(model)
     
     # 3. Load the saved state (which was saved on CPU)
     model_state_path = joinpath(@__DIR__, "../models/$(model_state_name).jld2")
@@ -45,6 +46,4 @@ model_state_name = "LaneletPredictor_with_Transformer_2025-01-06T17:46:50.287"
 model = setup_model(config, model_state_name)
 prediction = model(agt_features_upsampled, polyline_graphs, g_heteromap)
 
-VectorLanelet.plot_predictions(cpu(agt_features), cpu(labels), cpu(prediction))
-
-savefig("LaneletPredictor_validation.png")
+VectorLanelet.plot_predictions(cpu(agt_features), cpu(labels), cpu(prediction), save=true)

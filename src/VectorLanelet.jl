@@ -31,12 +31,10 @@ export create_residual_block,
        create_prediction_head
 include("layers_remaster.jl")
 
-# export create_actor_net,
-#        create_vector_subgraph
-# include("create_model.jl")
-
-# export VectorSubGraph
-# include("vectorSubgraph.jl")
+export load_map_data,
+       prepare_agent_features,
+       prepare_map_features
+include("dataset.jl")
 
 export extract_gml_src_dst
 include("utils.jl")
@@ -45,13 +43,15 @@ export ActorNet_Simp,
        PolylineEncoder,
        MapEncoder,
        LaneletPredictor
-include("lanelet_predictor.jl") 
+include("lanelet_predictor.jl")
+
+export create_filtered_interaction_graphs,
+       InteractionGraphModel,
+       LaneletFusionPred
+include("lanelet_fuse_predictor.jl")
 
 export logging_callback,
-       save_model_state,
-       load_map_data,
-       prepare_agent_features,
-       prepare_map_features
+       save_model_state
 include("training_utils.jl")
 
 # Export spatial attention functionality
