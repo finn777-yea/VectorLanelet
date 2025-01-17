@@ -121,7 +121,8 @@ function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false
         (:lanelet, :left, :lanelet) => extract_gml_src_dst(g_meta, "Left"),
         (:lanelet, :suc, :lanelet) => extract_gml_src_dst(g_meta, "Successor"),
         (:lanelet, :adj_left, :lanelet) => extract_gml_src_dst(g_meta, "AdjacentLeft"),
-        (:lanelet, :adj_right, :lanelet) => extract_gml_src_dst(g_meta, "AdjacentRight")
+        (:lanelet, :adj_right, :lanelet) => extract_gml_src_dst(g_meta, "AdjacentRight"),
+        dir = :in
     )
     
     if save_features

@@ -16,7 +16,7 @@ function create_filtered_interaction_graphs(agt_pos, ctx_pos, distance_threshold
     # TODO: Make it GPU-friendly: avoid indices[i]
     src = [idx[1] for idx in indices]  # agent indices
     dst = [idx[2] + num_agt for idx in indices]  # context indices
-    edge_ind = (dst, src)
+    edge_ind = (src, dst)
     
     # Normalize edge data
     edata = reshape(dist[mask], 1, :)
@@ -26,56 +26,12 @@ function create_filtered_interaction_graphs(agt_pos, ctx_pos, distance_threshold
     inter_graph = GNNGraph(
         edge_ind,
         num_nodes = num_agt + num_ctx,
-        edata = (;d = edata)
+        edata = (;d = edata),
+        dir = :in
     )
     @assert inter_graph.num_nodes == num_agt + num_ctx "Number of nodes is not correct"
     return inter_graph
 end
-
-# """
-#     Create interaction graphs with node indices
-#     Return:
-#         - inter_graphs: GNNGraphs with node indices
-#         the ith graph in inter_graphs has ndata.ind storing:
-#             global index of the agt node
-#             global indices of the valid ctx nodes
-# """
-# function create_filtered_interaction_graphs(agt_pos, ctx_pos, distance_threshold::Real)
-#     inter_graphs = GNNGraph[]
-#     for agt_ind in axes(agt_pos, 2)
-#         diff = agt_pos[:, agt_ind] .- ctx_pos
-#         distances = sqrt.(sum(diff.^2, dims=1))
-#         @show eltype(distances)
-#         mask = distances .<= distance_threshold
-#         # [distance]/[mask]: 1xnum_ctx
-#         @assert length(vec(mask)) == size(ctx_pos, 2) "Mask size is not correct"
-        
-#         valid_indices = findall(vec(mask))      # Global indices of the ctx nodes
-#         g = star_digraph(length(valid_indices) + 1) |> GNNGraph
-#         g.ndata.ind = vcat(agt_ind, valid_indices)
-#         g.edata.d = reshape(distances[mask], 1, :)
-#         @show eltype(g.edata.d)
-#         push!(inter_graphs, g)
-#     end
-#     return batch(inter_graphs)
-# end
-
-# TODO: Make it GPU compatible
-# function prepare_interaction_feautures(emb_agt, emb_ctx, inter_graphs)
-#     ndata = zeros(Float32, size(emb_agt, 1), inter_graphs.num_nodes)
-#     clusters = graph_indicator(inter_graphs)
-#     # Replace in-place updates with functional construction
-#     ndata = mapreduce(hcat, 1:inter_graphs.num_graphs) do cluster
-#         cluster_nodes = findall(==(cluster), clusters)
-#         inds = inter_graphs.ndata.ind[cluster_nodes]
-#         # First node is agent, rest are map nodes
-#         @assert inds[1] == cluster "Agent node index is not correct"
-        
-#         # Concatenate agent and context features for this cluster
-#         [emb_agt[:, inds[1]] reduce(hcat, [emb_ctx[:, i] for i in inds[2:end]])]
-#     end
-#     return ndata
-# end
 
 """
 A GAT based interaction graph model
@@ -116,7 +72,6 @@ Parameters:
 Returns:
 - Output agts features, shape (channels, num_agts)
 """
-# TODO: normalize edge features?
 function (interaction::InteractionGraphModel)(agt_features, agt_pos, ctx_features, ctx_pos, dist_thrd)
     num_agts = size(agt_pos, 2)
     num_ctx = size(ctx_pos, 2)

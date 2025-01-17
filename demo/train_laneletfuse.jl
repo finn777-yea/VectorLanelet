@@ -62,11 +62,11 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any}; model_na
     )
 
     # Initial logging
-    # Flux.reset!(model)
-    # pred = model(agt_features_upsampled, map2agent_graphs, polyline_graphs, g_heteromap, agent2map_graphs)
-    # loss = loss_fn(pred, labels)
-    # epoch = 0
-    # logging_callback(wblogger, "train", epoch, cpu(loss)..., log_step_increment=0)
+    Flux.reset!(model)
+    pred = model(agt_features_upsampled, agt_pos, polyline_graphs, g_heteromap, llt_pos)
+    loss = loss_fn(pred, labels)
+    epoch = 0
+    logging_callback(wblogger, "train", epoch, cpu(loss)..., log_step_increment=0)
 
     # Training loop
     @info "Start training"
