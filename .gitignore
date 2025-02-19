@@ -9,3 +9,4 @@ src/vectorSubgraph.jl
 src/layers.jl
 
 *.jld2
+*.svg
