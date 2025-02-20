@@ -9,7 +9,7 @@ function create_filtered_interaction_graphs(agt_pos, ctx_pos, distance_threshold
     mask = dist .<= distance_threshold
     @assert size(mask) == (num_agt, num_ctx) "Mask size is not correct"
     indices = findall(mask) |> cpu
-    
+
     # Handle empty case
     isempty(indices) && return GNNGraph(num_agt + num_ctx, dir=:in)
 
@@ -17,7 +17,7 @@ function create_filtered_interaction_graphs(agt_pos, ctx_pos, distance_threshold
     src = [idx[1] for idx in indices]  # agent indices
     dst = [idx[2] + num_agt for idx in indices]  # context indices
     edge_ind = (src, dst)
-    
+
     # Normalize edge data
     edata = reshape(dist[mask], 1, :)
     if normalize_dist
@@ -96,14 +96,14 @@ function (interaction::InteractionGraphModel)(data)
     num_ctx = size(ctx_pos, 2)
     g = create_filtered_interaction_graphs(agt_pos, ctx_pos, dist_thrd)
     @assert g.num_nodes == num_agts + num_ctx "Number of nodes is not correct"
-    
+
     if g.num_edges == 0
         # TODO: Pass agt_features through a res block
         agt_features = interaction.agt_res(agt_features)
         agt_features = relu(agt_features)
         return agt_features
     end
-    
+
     node_features = hcat(agt_features, ctx_features)
     res = node_features
     # TODO: Configure the type of edge features

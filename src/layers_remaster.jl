@@ -1,6 +1,6 @@
 function create_residual_block(in_channels , out_channels; kernel_size=3, stride, norm="GN", ng=32, act=true)
     filter = (kernel_size,)
-    
+
     # Main convolution branch
     main_branch = Chain(
         Conv(filter, in_channels => out_channels, stride=stride, pad=SamePad()),
@@ -9,7 +9,7 @@ function create_residual_block(in_channels , out_channels; kernel_size=3, stride
         Conv(filter, out_channels => out_channels, stride=1, pad=SamePad()),
         norm == "GN" ? GroupNorm(out_channels, gcd(ng, out_channels)) : BatchNorm(out_channels)
     )
-    
+
     # Identity/downsample branch
     if stride != 1 || out_channels != in_channels
         identity_branch = Chain(
@@ -19,13 +19,13 @@ function create_residual_block(in_channels , out_channels; kernel_size=3, stride
     else
         identity_branch = identity
     end
-    
+
     # Combine branches with skip connection
     residual = Chain(
         Parallel(+, main_branch, identity_branch),
         act ? relu : identity
     )
-    
+
     return residual
 end
 
@@ -106,11 +106,11 @@ function create_transformer_block(num_layer, hidden_size, num_head)
 
     transformer = Transformer(
         Layers.TransformerBlock,        # Transformer encoder block
-        num_layer, 
-        relu, 
-        num_head, 
-        hidden_size, 
-        head_hidden_size, 
+        num_layer,
+        relu,
+        num_head,
+        hidden_size,
+        head_hidden_size,
         intermediate_size
     )
     return transformer
@@ -136,7 +136,7 @@ function create_hetero_conv(in_channels, out_channels)
     adj_left_rel = (:lanelet, :adj_left, :lanelet)
     adj_right_rel = (:lanelet, :adj_right, :lanelet)
     suc_rel = (:lanelet, :suc, :lanelet)
-    
+
     heteroconv = HeteroGraphConv(
         left_rel => GATConv(in_channels=>out_channels),
         right_rel => GATConv(in_channels=>out_channels),
