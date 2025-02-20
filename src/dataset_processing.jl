@@ -73,7 +73,7 @@ function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false
 
         # Check if the lanelets' order is aligned with the vertices' order (in location0 map)
         v == 14 && @assert lanelet.tag == LaneletTag(1707, false)
-        
+
         centerline = lanelet.curve
         num_vectors = length(centerline) - 1
         g_fc = complete_digraph(num_vectors) |> GNNGraph
@@ -81,26 +81,26 @@ function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false
         # Calculate the midpoint coordinates of the lanelet
         llt_midpoint = calculate_llt_midpoint(centerline)
         push!(pos_llt, llt_midpoint)
-        
+
         # Iterate over points in centerline to get vector-level features
         polyline_features = []
         for i in 1:num_vectors
             # Get start and end points of each polyline segment
             start_point = centerline[i]
             end_point = centerline[i+1]
-            
+
             # Extract x,y coordinates for start and end points
             start_x = start_point.pos.x
             start_y = start_point.pos.y
-            end_x = end_point.pos.x 
+            end_x = end_point.pos.x
             end_y = end_point.pos.y
-            
+
             # Create feature vector with start and end coordinates
             push!(polyline_features, Float32[start_x, start_y, end_x, end_y])
         end
         # Convert to matrix format
         polyline_features = reduce(hcat, polyline_features)       # feature matrix:(4, num_vectors)
-        
+
         g_fc.ndata.x = polyline_features
         g_fc.gdata.id = lanelet_id
         push!(polyline_graphs, g_fc)
@@ -115,7 +115,7 @@ function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false
     # Compute the mean and std
     # Only use the start x and start y of each vector for mean and std
     μ, σ = VectorLanelet.calculate_mean_and_std(polyline_graphs.x[1:2, :]; dims=2)
-    
+
     g_heteromap = GNNHeteroGraph(
         (:lanelet, :right, :lanelet) => extract_gml_src_dst(g_meta, "Right"),
         (:lanelet, :left, :lanelet) => extract_gml_src_dst(g_meta, "Left"),
@@ -124,7 +124,7 @@ function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false
         (:lanelet, :adj_right, :lanelet) => extract_gml_src_dst(g_meta, "AdjacentRight"),
         dir = :in
     )
-    
+
     if save_features
         # Save the map features
         cache_path = joinpath(@__DIR__, "../res/map_features.jld2")
@@ -132,7 +132,7 @@ function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false
         jldsave(cache_path, map_features=polyline_graphs.x,
         polyline_graphs=polyline_graphs, g_heteromap=g_heteromap, μ=μ, σ=σ)
     end
-    
+
     return polyline_graphs, g_heteromap, pos_llt, μ, σ
 end
 
@@ -142,4 +142,11 @@ function calculate_llt_midpoint(centerline)
     mid_idx = div(num_points, 2)
     mid_point = centerline[mid_idx]
     return [mid_point.pos.x, mid_point.pos.y]
+end
+
+function agent_features_upsample(agt_features)
+    agt_features = permutedims(agt_features, (2, 1, 3))
+    agt_features = upsample_linear(agt_features, size=10)
+    agt_features = permutedims(agt_features, (2, 1, 3))
+    return agt_features
 end

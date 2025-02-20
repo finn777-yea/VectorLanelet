@@ -3,14 +3,6 @@ using Flux
 using Wandb, Logging, Dates
 using JLD2
 
-# TODO: Move to preprocess block
-function agent_features_upsample(agt_features)
-    agt_features = permutedims(agt_features, (2, 1, 3))
-    agt_features = upsample_linear(agt_features, size=10)
-    agt_features = permutedims(agt_features, (2, 1, 3))
-    return agt_features
-end
-
 function run_training(wblogger::WandbLogger, config::Dict{String, Any})
     device = config["use_cuda"] ? gpu : cpu
 
