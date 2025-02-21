@@ -1,6 +1,7 @@
 Manifest.toml
 .CondaPkg
 dev
+models
 
 wandb
 
@@ -8,5 +9,4 @@ src/create_model.jl
 src/vectorSubgraph.jl
 src/layers.jl
 
-*.jld2
 *.svg
