@@ -89,7 +89,6 @@ Parameters:
 Returns:
 - Output agts features, shape (channels, num_agts)
 """
-# TODO: Empty ctx handling
 function (interaction::InteractionGraphModel)(data)
     agt_features, agt_pos, ctx_features, ctx_pos, dist_thrd = data
     num_agts = size(agt_pos, 2)
@@ -164,12 +163,10 @@ end
     Forward pass for LaneletFusionPred
 Parameters:
     - agt_features: (channels, timesteps, num_agents)
-    - pos_agt: (2, num_agents)
+    - agt_pos: (2, num_agents)
     - polyline_graphs: each graph -> lanelet, node -> vector
     - g_heteromaps: each graph -> map, node -> lanelet
-    - pos_llt: (2, num_lanelets)
-    - map2agent_graphs: GNNGraphs with edge data
-    - agent2map_graphs: GNNGraphs with edge data
+    - llt_pos: (2, num_lanelets)
 """
 # TODO: Use profile to check the efficiency
 function (model::LaneletFusionPred)(agt_features, agt_pos, polyline_graphs, g_heteromaps, llt_pos)
@@ -177,7 +174,6 @@ function (model::LaneletFusionPred)(agt_features, agt_pos, polyline_graphs, g_he
     emb_lanelets = model.ple(polyline_graphs, polyline_graphs.x)
     emb_map = model.mapenc(g_heteromaps, emb_lanelets)
 
-    # TODO: Extend the fusion module to contain 2 layers of fuse attention
     emb_map = model.a2m((emb_map, llt_pos, emb_actor, agt_pos, model.dist_thrd.a2m))
     @assert size(emb_map,2) == g_heteromaps.num_nodes[:lanelet]
     emb_map = model.m2m(g_heteromaps, emb_map)
@@ -190,3 +186,5 @@ function (model::LaneletFusionPred)(agt_features, agt_pos, polyline_graphs, g_he
     predictions = model.pred_head(emb_actor)
     return predictions
 end
+
+

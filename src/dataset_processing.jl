@@ -23,41 +23,45 @@ function load_map_data()
 end
 
 """
-Prepare agent features and labels from lanelet centerlines
+Prepare agent features and agent end position from lanelet centerlines
     - agent features: (2, 2, B)   (channels, time_step, batch_size)
-    - labels: (2, B)            (channels, batch_size)
+    - agt_pos_end: (2, B)            (channels, batch_size)
 
 """
 function prepare_agent_features(lanelet_roadway::LaneletRoadway, save_features::Bool=false)
     agt_features = Vector{Matrix{Float32}}()
-    pos_agt = Vector{Vector{Float32}}()
-    labels = Vector{Vector{Float32}}()
+    agt_pos = Vector{Vector{Float32}}()
+    agt_pos_end = Vector{Vector{Float32}}()
     for lanelet in values(lanelet_roadway.lanelets)
         curve = lanelet.curve
         push!(agt_features, hcat([curve[1].pos.x, curve[1].pos.y], [curve[2].pos.x, curve[2].pos.y]))
-        push!(pos_agt, [curve[2].pos.x, curve[2].pos.y])
-        push!(labels, [curve[end].pos.x, curve[end].pos.y])
+        push!(agt_pos, [curve[2].pos.x, curve[2].pos.y])
+        push!(agt_pos_end, [curve[end].pos.x, curve[end].pos.y])
     end
 
     agt_features = cat(agt_features..., dims=3)
-    pos_agt = hcat(pos_agt...)
-    labels = hcat(labels...)
+    agt_pos = hcat(agt_pos...)
+    agt_pos_end = hcat(agt_pos_end...)
 
     if save_features
         # Save the agent features
         cache_path = joinpath(@__DIR__, "../res/agent_features.jld2")
         @info "Saving agent features to $(cache_path)"
-        jldsave(cache_path, agt_features=agt_features, labels=labels)
+        jldsave(cache_path, agt_features=agt_features, agt_pos_end=agt_pos_end)
     end
 
-    return agt_features, pos_agt, labels
+    return agt_features, agt_pos, agt_pos_end
 end
 
 """
 Prepare map features stored in polyline level GNNGraph(fulled-connected graph)
-    vector features: (4, num_vectors) -> polyline_graphs.x
+    vector features: (6, num_vectors) -> polyline_graphs.x
+        - start_x, start_y, end_x, end_y
+        - attribute features for object type
+        - polyline id
     routing_graph -> g_heteromap
 """
+# TODO: is it possible to acess only one partial routing graph
 function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false)
     polyline_graphs = GNNGraph[]
     pos_llt = []
@@ -72,7 +76,7 @@ function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false
         lanelet = lanelet_roadway[lanelet_tag]
 
         # Check if the lanelets' order is aligned with the vertices' order (in location0 map)
-        v == 14 && @assert lanelet.tag == LaneletTag(1707, false)
+        # v == 14 && @assert lanelet.tag == LaneletTag(1707, false)
 
         centerline = lanelet.curve
         num_vectors = length(centerline) - 1
@@ -88,7 +92,7 @@ function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false
             # Get start and end points of each polyline segment
             start_point = centerline[i]
             end_point = centerline[i+1]
-
+            # TODO: node(vector) features completion
             # Extract x,y coordinates for start and end points
             start_x = start_point.pos.x
             start_y = start_point.pos.y
@@ -149,4 +153,26 @@ function agent_features_upsample(agt_features)
     agt_features = upsample_linear(agt_features, size=10)
     agt_features = permutedims(agt_features, (2, 1, 3))
     return agt_features
+end
+
+
+"""
+    Preprocess data for DataLoader
+expect data to include:
+    - agent_data: (agt_features_upsampled, agt_pos)
+    - map_data: (polyline_graphs, g_heteromap, llt_pos)
+    - labels: (2, timesteps, num_agents)
+"""
+function preprocess_data(data, overfit::Bool=false)
+    agent_data, _, labels = data
+    if overfit
+        @info "Performing overfitting"
+        X = (agent_data.agt_features_upsampled[:,:,1:1], agent_data.agt_pos[:,1:1])
+        Y = labels[:,1:1]
+    else
+        X = (agent_data.agt_features_upsampled, agent_data.agt_pos)
+        Y = labels
+    end
+
+    return X, Y
 end

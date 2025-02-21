@@ -42,7 +42,7 @@ Takes raw agent features and graph data as input, returns predictions
 - g_heteromaps: A batch of maps: each graph -> map, node -> lanelet
 """
 # TODO: For agents from certain map, provide corresponding map
-function (model::LaneletPredictor)(agt_features::AbstractArray, polyline_graphs::GNNGraph, g_heteromaps::GNNHeteroGraph)
+function (model::LaneletPredictor)(agt_features::AbstractArray, agt_pos, polyline_graphs::GNNGraph, g_heteromaps::GNNHeteroGraph, llt_pos)
     emb_actor = model.actornet(agt_features)
 
     emb_lanelets = model.ple(polyline_graphs, polyline_graphs.x)
@@ -63,11 +63,3 @@ function (model::LaneletPredictor)(agt_features::AbstractArray, polyline_graphs:
 
     return predictions
 end
-
-struct LaneletPredFactory <: ModelFactory end
-
-preprocess_data(::LaneletPredFactory, data) = data
-n_states(::LaneletPredFactory) = nothing
-input_dims(::LaneletPredFactory) = nothing
-
-setup_model(::LaneletPredFactory, config) = nothing
