@@ -24,15 +24,15 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
     # Prepare data
     lanelet_roadway, g_meta = load_map_data()
     @info "Preparing agent features on $(device)"
-    agt_features, agt_pos, agt_pos_end = prepare_agent_features(lanelet_roadway) |> device
+    agt_features, agt_pos_end = prepare_agent_features(lanelet_roadway) |> device
     agt_features_upsampled = agent_features_upsample(agt_features) |> device
 
     @info "Preparing map features on $(device)"
     polyline_graphs, g_heteromap, llt_pos, μ, σ = prepare_map_features(lanelet_roadway, g_meta) |> device
 
-    labels = config["predict_current_pos"] ? agt_pos : agt_pos_end
+    labels = config["predict_current_pos"] ? agt_features[:, 2, :] : agt_pos_end
 
-    agent_data = (; agt_features_upsampled, agt_pos)
+    agent_data = (; agt_features_upsampled)
     map_data = (; polyline_graphs, g_heteromap, llt_pos)
     data = (; agent_data, map_data, labels)
 
@@ -63,7 +63,7 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
     # Initial logging
     @info "Initial logging"
     x, y = train_data
-    pred = model(x..., map_data...)
+    pred = model(x, map_data...)
     loss = loss_fn(pred, y)
     epoch = 0
     logging_callback(wblogger, "train", epoch, cpu(loss)..., log_step_increment=0)
@@ -76,7 +76,7 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
         # Training
         for (x, y) in train_loader
             loss, grad = Flux.withgradient(model) do model
-                pred = model(x..., map_data...)
+                pred = model(x, map_data...)
                 loss_fn(pred, y)
             end
 

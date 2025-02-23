@@ -24,23 +24,20 @@ end
 
 """
 Prepare agent features and agent end position from lanelet centerlines
-    - agent features: (2, 2, B)   (channels, time_step, batch_size)
-    - agt_pos_end: (2, B)            (channels, batch_size)
+    - agent features: (2, 2, B)   (channels, time_step)
+    - agt_pos_end: (2, B)            (channels,)
 
 """
 function prepare_agent_features(lanelet_roadway::LaneletRoadway, save_features::Bool=false)
     agt_features = Vector{Matrix{Float32}}()
-    agt_pos = Vector{Vector{Float32}}()
     agt_pos_end = Vector{Vector{Float32}}()
     for lanelet in values(lanelet_roadway.lanelets)
         curve = lanelet.curve
         push!(agt_features, hcat([curve[1].pos.x, curve[1].pos.y], [curve[2].pos.x, curve[2].pos.y]))
-        push!(agt_pos, [curve[2].pos.x, curve[2].pos.y])
         push!(agt_pos_end, [curve[end].pos.x, curve[end].pos.y])
     end
 
     agt_features = cat(agt_features..., dims=3)
-    agt_pos = hcat(agt_pos...)
     agt_pos_end = hcat(agt_pos_end...)
 
     if save_features
@@ -50,7 +47,7 @@ function prepare_agent_features(lanelet_roadway::LaneletRoadway, save_features::
         jldsave(cache_path, agt_features=agt_features, agt_pos_end=agt_pos_end)
     end
 
-    return agt_features, agt_pos, agt_pos_end
+    return agt_features, agt_pos_end
 end
 
 """
@@ -167,10 +164,10 @@ function preprocess_data(data, overfit::Bool=false)
     agent_data, _, labels = data
     if overfit
         @info "Performing overfitting"
-        X = (agent_data.agt_features_upsampled[:,:,1:1], agent_data.agt_pos[:,1:1])
+        X = (agent_data.agt_features_upsampled[:,:,1:1])
         Y = labels[:,1:1]
     else
-        X = (agent_data.agt_features_upsampled, agent_data.agt_pos)
+        X = agent_data.agt_features_upsampled
         Y = labels
     end
 

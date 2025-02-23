@@ -15,12 +15,6 @@ using Statistics
 using LinearAlgebra
 using Plots
 
-export Res1d,
-       Conv1d,
-       Linear,
-       PredictionHead
-include("layers.jl")
-
 export create_residual_block,
        create_group_block,
        create_node_encoder,
@@ -31,13 +25,23 @@ export create_residual_block,
        create_prediction_head
 include("layers_remaster.jl")
 
+
+export ActorNet_Simp,
+       PolylineEncoder,
+       MapEncoder
+include("common_blocks.jl")
+
 export load_map_data,
        prepare_agent_features,
-       prepare_map_features
-include("dataset.jl")
+       prepare_map_features,
+       agent_features_upsample
+include("dataset_processing.jl")
 
 export extract_gml_src_dst
 include("utils.jl")
+
+export ModelFactory
+include("abstract_model.jl")
 
 export ActorNet_Simp,
        PolylineEncoder,
@@ -53,9 +57,5 @@ include("lanelet_fuse_predictor.jl")
 export logging_callback,
        save_model_state
 include("training_utils.jl")
-
-# Export spatial attention functionality
-export create_distance_mask
-include("spatial_attention.jl")
 
 end     # VectorLanelet
