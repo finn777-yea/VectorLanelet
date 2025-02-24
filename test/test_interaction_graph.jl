@@ -1,45 +1,69 @@
 using Test
-using VectorLanelet: load_map_data, prepare_agent_features, create_filtered_interaction_graphs, InteractionGraphModel
+using VectorLanelet: create_filtered_interaction_graph, InteractionGraphModel
 using GraphNeuralNetworks
 using Random
-
+using Flux
+@testset "create_filtered_interaction_graph" begin
+    # Test more complex batch case with different sized samples
 """
-    Position of agents and lanelets:
-                         y
-                         ^
-                         |
-                         |                   
-                         |
----l5---l4---l3---l2---l1/a1---a2---a3---a4--->  x
-                         |
+Sample 1: 3 agents and 4 contexts
+                    y
+                    ^
+                    |
+                    |
+                    |
+---c4---c3---c2---c1/a1---a2---a3--->  x
+                    |
+                    |
+
+Sample 2: 5 agents and 2 contexts
+            y
+            ^
+            |
+            |
+            a1---a2---a3---a4---a5
+            |
+            |
+-------c1---c2------------------->  x
 """
+    agt_pos1 = Float32[
+        0 1 2;    # x coordinates
+        0 0 0     # y coordinates
+    ]
+    ctx_pos1 = Float32[
+        0 -1 -2 -3;  # x coordinates
+        0  0  0  0   # y coordinates
+    ]
 
-@testset "Interaction Graph" begin
-    agt_pos = [Float32[i, 0] for i in 0:3]
-    llt_pos = [Float32[-i, 0] for i in 0:4]
+    agt_pos2 = Float32[
+        0 1 2 3 4;  # x coordinates
+        1 1 1 1 1   # y coordinates
+    ]
+    ctx_pos2 = Float32[
+        -1 0;      # x coordinates
+         0 0       # y coordinates
+    ]
 
-    agt_pos = hcat(agt_pos...)
-    llt_pos = hcat(llt_pos...)
-    n_in = 64        # Number of features for each node
-    e_in = 1
-    out_dim = 64
-    num_heads = 4
-    num_layers = 2
-    num_agents = size(agt_pos, 2)
-    num_llts = size(llt_pos, 2)
-    agent_emb = rand(Float32, n_in, num_agents)
-    map_emb = rand(Float32, n_in, num_llts)
-    dist_thrd = 2.0
+    # Test CPU batch processing
+    agt_pos = [agt_pos1, agt_pos2]
+    ctx_pos = [ctx_pos1, ctx_pos2]
+    g_agent = create_filtered_interaction_graph(agt_pos, ctx_pos, 2.0)
+    @test g_agent isa GNNGraph
+    @test edge_index(g_agent) isa Tuple
 
-    @testset "create_filtered_interaction_graphs with features" begin
-        g_agent = create_filtered_interaction_graphs(agt_pos, llt_pos, dist_thrd)
-        @test all(g_agent.edata.d .< dist_thrd)
-        @assert typeof(g_agent.edata.d) == Matrix{Float32}
-        @show edge_index(g_agent)
-    end
+    # Test GPU batch processing
+    agt_pos = [agt_pos1, agt_pos2] |> gpu
+    ctx_pos = [ctx_pos1, ctx_pos2] |> gpu
+    g_agent = create_filtered_interaction_graph(agt_pos, ctx_pos, 1.0)
+    @test g_agent isa GNNGraph
+    @test g_agent.edata.e isa AbstractMatrix
 
-    # @testset "InteractionGraphModel" begin
-    #     interaction = InteractionGraphModel(n_in, e_in, out_dim, num_heads=num_heads)
-    #     res = interaction(agent_emb, agt_pos, map_emb, llt_pos, 100.0)
-    # end
+    # Test edge connections for distance threshold 1.0
+    expected_src = [1, 1, 2, 4]
+    expected_dst = [9, 9, 10, 14]
+    src, dst = edge_index(g_agent)
+    @test src |> sort == expected_src
+    @test dst |> sort == expected_dst
+    @show g_agent.edata.e
 end
+
