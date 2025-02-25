@@ -71,43 +71,6 @@ function create_filtered_interaction_graph(agt_pos::Vector{<:AbstractMatrix}, ct
     return graph
 end
 
-function create_filtered_interaction_graphs(agt_pos::AbstractMatrix, ctx_pos::AbstractMatrix, distance_threshold::Real, normalize_dist::Bool=false)
-    num_agt = size(agt_pos, 2)
-    num_ctx = size(ctx_pos, 2)
-    dist = reshape(agt_pos, 2,:,1) .- reshape(ctx_pos, 2,1,:)
-    # [dist]: (2, num_agt, num_ctx)
-    dist = sqrt.(sum(dist.^2, dims=1))[1,:,:]
-
-    @assert size(dist) == (num_agt, num_ctx) "Distance matrix size is not correct"
-    mask = dist .<= distance_threshold
-    @assert size(mask) == (num_agt, num_ctx) "Mask size is not correct"
-    indices = findall(mask) |> cpu
-
-    # Handle empty case
-    isempty(indices) && return GNNGraph(num_agt + num_ctx, dir=:in)
-
-    # TODO: Make it GPU-friendly: avoid indices[i]
-    src = [idx[1] for idx in indices]  # agent indices
-    dst = [idx[2] + num_agt for idx in indices]  # context indices
-    edge_ind = (src, dst)
-
-    # Normalize edge data
-    edata = reshape(dist[mask], 1, :)
-    if normalize_dist
-        μ, σ = calculate_mean_and_std(edata, dims=2)
-        edata = (edata .- μ) ./ σ
-    end
-    # Configure src and dst correctly: the aggregation happens at target nodes
-    inter_graph = GNNGraph(
-        edge_ind,
-        num_nodes = num_agt + num_ctx,
-        edata = (;d = edata),
-        dir = :in
-    )
-    @assert inter_graph.num_nodes == num_agt + num_ctx "Number of nodes is not correct"
-    return inter_graph
-end
-
 """
     A GAT based interaction graph model
 Parameters:
