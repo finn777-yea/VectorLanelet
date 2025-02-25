@@ -23,31 +23,83 @@ function load_map_data()
 end
 
 """
-Prepare agent features and agent end position from lanelet centerlines
-    - agent features: (2, 2, B)   (channels, time_step)
-    - agt_pos_end: (2, B)            (channels,)
-
+Group agents that are close to each other into scenarios based on spatial proximity
 """
-function prepare_agent_features(lanelet_roadway::LaneletRoadway, save_features::Bool=false)
-    agt_features = Vector{Matrix{Float32}}()
-    agt_pos_end = Vector{Vector{Float32}}()
-    for lanelet in values(lanelet_roadway.lanelets)
-        curve = lanelet.curve
-        push!(agt_features, hcat([curve[1].pos.x, curve[1].pos.y], [curve[2].pos.x, curve[2].pos.y]))
-        push!(agt_pos_end, [curve[end].pos.x, curve[end].pos.y])
+function cluster_agents_into_scenarios(positions::Matrix{Float32}, distance_threshold::Float32=50.0f0)
+    num_agents = size(positions, 2)
+    assigned = falses(num_agents)
+    scenarios = Vector{Vector{Int}}()
+
+    for i in 1:num_agents
+        if assigned[i]
+            continue
+        end
+
+        # Start a new scenario
+        current_scenario = [i]
+        assigned[i] = true
+
+        # Find nearby agents
+        for j in (i+1):num_agents
+            if assigned[j]
+                continue
+            end
+
+            # Check distance between agents i and j using their initial positions
+            dist = sqrt(sum((positions[:,i] - positions[:,j]).^2))
+            if dist < distance_threshold
+                push!(current_scenario, j)
+                assigned[j] = true
+            end
+        end
+
+        push!(scenarios, current_scenario)
     end
 
-    agt_features = cat(agt_features..., dims=3)
-    agt_pos_end = hcat(agt_pos_end...)
+    return scenarios
+end
+
+"""
+Prepare agent features and agent end position from lanelet centerlines
+    - agt_features: (2, 2, num_agents, num_scenarios)   (channels, time_step, agents, scenarios)
+    - agt_pos_end: (2, num_agents, num_scenarios)       (channels, agents, scenarios)
+"""
+function prepare_agent_features(lanelet_roadway::LaneletRoadway, save_features::Bool=false)
+    # First collect all agent features as before
+    temp_features = Vector{Matrix{Float32}}()
+    temp_pos_end = Vector{Vector{Float32}}()
+    for lanelet in values(lanelet_roadway.lanelets)
+        curve = lanelet.curve
+        push!(temp_features, hcat([curve[1].pos.x, curve[1].pos.y], [curve[2].pos.x, curve[2].pos.y]))
+        push!(temp_pos_end, [curve[end].pos.x, curve[end].pos.y])
+    end
+
+    # Get initial positions of all agents
+    initial_positions = hcat([f[:,1] for f in temp_features]...)
+
+    # Group agents into scenarios
+    scenarios = cluster_agents_into_scenarios(initial_positions)
+
+    # Reorganize features and end positions by scenarios
+    agt_features_by_scenario = []
+    agt_pos_end_by_scenario = []
+
+    for scenario_indices in scenarios
+        scenario_features = cat([temp_features[i] for i in scenario_indices]..., dims=3)
+        scenario_pos_end = hcat([temp_pos_end[i] for i in scenario_indices]...)
+
+        push!(agt_features_by_scenario, scenario_features)
+        push!(agt_pos_end_by_scenario, scenario_pos_end)
+    end
+
 
     if save_features
-        # Save the agent features
         cache_path = joinpath(@__DIR__, "../res/agent_features.jld2")
         @info "Saving agent features to $(cache_path)"
         jldsave(cache_path, agt_features=agt_features, agt_pos_end=agt_pos_end)
     end
 
-    return agt_features, agt_pos_end
+    return agt_features_by_scenario, agt_pos_end_by_scenario
 end
 
 """
