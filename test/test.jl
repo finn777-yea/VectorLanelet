@@ -57,7 +57,7 @@ end
 
     # Group 1 doesn't change timesteps
     @test actornet.groups[1](actornet.agt_preprocess(agt_features)) |> size == (10, 64, 32)
-    
+
     # Group 2 reduces timesteps by half
     @test actornet.groups[2](
         actornet.groups[1](
@@ -70,7 +70,7 @@ end
             actornet.agt_preprocess(agt_features)
         )
     ) |> size == (10, 128, 32)
-    
+
     @test actornet.lateral[2](
         actornet.groups[2](
             actornet.groups[1](
@@ -103,12 +103,12 @@ end
 end
 
 @testset "LaneletPredictor" begin
-    
+
     # Test input dimensions
     num_agts = 32
     num_timesteps = 2
     agt_features = rand(Float32, 2, num_timesteps, num_agts)
-    
+
     g1 = GNNGraph([1,2], [2,3], ndata=rand(Float32, 4, 3))
     g2 = GNNGraph([1,2,4], [2,3,1], ndata=rand(Float32, 4, 4))
     g_polyline = batch([g1, g2])
@@ -121,12 +121,12 @@ end
         (:lanelet, :adj_left, :lanelet) => ([1], [2]),
         (:lanelet, :adj_right, :lanelet) => ([1], [2])
         )
-        
+
     # Test forward pass
     μ, σ = VectorLanelet.calculate_mean_and_std(vector_features[1:2, :]; dims=2)
     model = LaneletPredictor(μ, σ)
     out = model(agt_features, g_polyline, g_heteromap)
-    
+
     # Test output dimensions
     @test size(out) == (2, num_agts)
 end
@@ -139,3 +139,9 @@ end
     model = LaneletFusionPred(config, μ, σ)
     @test model(agt_features, agt_pos, polyline_graphs, g_heteromap, pos_llt) |> size == (2, 32)
 end
+
+include("../src/config.jl")
+lanelet_roadway, g_meta = VectorLanelet.load_map_data()
+agt_features, agt_pos_end = VectorLanelet.prepare_agent_features(lanelet_roadway)
+polyline_graphs, g_heteromap, pos_llt, μ, σ = VectorLanelet.prepare_map_features(lanelet_roadway, g_meta)
+model = LaneletFusionPred(config, μ, σ)

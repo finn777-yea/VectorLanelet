@@ -65,5 +65,6 @@ Sample 2: 5 agents and 2 contexts
     @test src |> sort == expected_src
     @test dst |> sort == expected_dst
     @show g_agent.edata.e
+    @show g_agent.num_nodes
 end
 
