@@ -19,24 +19,12 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
     device = config["use_cuda"] ? gpu : cpu
     @info "Using device: $(device) for training"
 
-    # Prepare data
-    lanelet_roadway, g_meta = load_map_data()
-    @info "Preparing agent features on $(device)"
-    agt_features, agt_pos_end = prepare_agent_features(lanelet_roadway) |> device
-    agt_features_upsampled = map(agent_features_upsample, agt_features) |> device
-
-    @info "Preparing map features on $(device)"
-    polyline_graphs, g_heteromap, llt_pos, μ, σ = prepare_map_features(lanelet_roadway, g_meta) |> device
-
-    labels = config["predict_current_pos"] ? agt_features[:, 2, :] : agt_pos_end
-
-    agent_data = (; agt_features_upsampled)
-    map_data = (; polyline_graphs, g_heteromap, llt_pos)
-    data = (; agent_data, map_data, labels)
+    # Preparing data
+    data = VectorLanelet.prepare_data(config, device)
 
     # Initialize model
     @info "Initializing model and moving to $(device)"
-    model = setup_model(config, μ, σ) |> device
+    model = setup_model(config, data.map_data.μ, data.map_data.σ) |> device
 
     # Training setup
     opt = Flux.setup(Adam(config["learning_rate"]), model)

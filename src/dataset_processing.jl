@@ -204,8 +204,22 @@ function agent_features_upsample(agt_features)
     return agt_features
 end
 
-function prepare_data(lanelet_roadway, g_meta, save_features::Bool=false)
+function prepare_data(config, device::Function)
+    lanelet_roadway, g_meta = load_map_data()
 
+    @info "Preparing agent features on $(device)"
+    agt_features, agt_pos_end = prepare_agent_features(lanelet_roadway) |> device
+    agt_features_upsampled = map(agent_features_upsample, agt_features) |> device
+
+    @info "Preparing map features on $(device)"
+    polyline_graphs, g_heteromap, llt_pos, μ, σ = prepare_map_features(lanelet_roadway, g_meta) |> device
+
+    labels = config["predict_current_pos"] ? agt_features[:, 2, :] : agt_pos_end
+
+    agent_data = (; agt_features_upsampled)
+    map_data = (; polyline_graphs, g_heteromap, llt_pos, μ, σ)
+    data = (; agent_data, map_data, labels)
+    return data
 end
 
 
