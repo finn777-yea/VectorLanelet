@@ -25,7 +25,7 @@ end
 """
 Group agents that are close to each other into scenarios based on spatial proximity
 """
-function cluster_agents_into_scenarios(positions::Matrix{Float32}, distance_threshold::Float32=50.0f0)
+function cluster_agents_into_scenarios(positions::Matrix{Float32}, distance_threshold::Float32=30.0f0)
     num_agents = size(positions, 2)
     assigned = falses(num_agents)
     scenarios = Vector{Vector{Int}}()
@@ -61,8 +61,8 @@ end
 
 """
 Prepare agent features and agent end position from lanelet centerlines
-    - agt_features: (2, 2, num_agents, num_scenarios)   (channels, time_step, agents, scenarios)
-    - agt_pos_end: (2, num_agents, num_scenarios)       (channels, agents, scenarios)
+    - agt_features: num_scenarios x (channels, time_step, num_agents)
+    - agt_pos_end: num_scenarios x (2, num_agents)
 """
 function prepare_agent_features(lanelet_roadway::LaneletRoadway, save_features::Bool=false)
     # First collect all agent features as before
@@ -204,22 +204,35 @@ function agent_features_upsample(agt_features)
     return agt_features
 end
 
+function prepare_data(lanelet_roadway, g_meta, save_features::Bool=false)
+
+end
+
 
 """
     Preprocess data for DataLoader
 expect data to include:
-    - agent_data: (agt_features_upsampled, agt_pos)
+    - agent_data: (agt_features_upsampled)
     - map_data: (polyline_graphs, g_heteromap, llt_pos)
     - labels: (2, timesteps, num_agents)
 """
 function preprocess_data(data, overfit::Bool=false)
-    agent_data, _, labels = data
+    num_scenarios = length(data.agent_data.agt_features_upsampled)
+    agent_data, map_data, labels = data
+    agt_current_pos = [i[:,end,:] for i in agent_data.agt_features_upsampled]
+    polyline_graphs = [map_data.polyline_graphs for _ in 1:num_scenarios]
+    g_heteromap = [map_data.g_heteromap for _ in 1:num_scenarios]
+    llt_pos = [map_data.llt_pos for _ in 1:num_scenarios]
+
+
     if overfit
         @info "Performing overfitting"
-        X = (agent_data.agt_features_upsampled[:,:,1:1])
-        Y = labels[:,1:1]
+        X = (agent_data.agt_features_upsampled[1,:], agt_current_pos[1,:],
+        polyline_graphs[1,:], g_heteromap[1,:], llt_pos[1,:])
+        Y = labels[1,:]
     else
-        X = agent_data.agt_features_upsampled
+        X = (;agent_data.agt_features_upsampled, agt_current_pos,
+        polyline_graphs, g_heteromap, llt_pos)
         Y = labels
     end
 

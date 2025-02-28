@@ -1,4 +1,3 @@
-# TODO: need to verify this compatible with gpu
 """
     Create a GNNGraph for each sample in the batch
 Parameters:
@@ -9,7 +8,7 @@ Parameters:
 Returns:
 - g: GNNGraph for each sample in the batch
 """
-function create_filtered_interaction_graph(agt_pos::Vector{<:AbstractMatrix}, ctx_pos::Vector{<:AbstractMatrix}, distance_threshold::Real, normalize_dist::Bool=true)
+function create_filtered_interaction_graph(agt_pos::Vector{T}, ctx_pos::Vector{T}, distance_threshold::Real, normalize_dist::Bool=true) where T <: AbstractMatrix
     # Process each sample independently
     @assert length(agt_pos) == length(ctx_pos) "Number of samples must match"
 
@@ -21,7 +20,6 @@ function create_filtered_interaction_graph(agt_pos::Vector{<:AbstractMatrix}, ct
 
     all_src = Int[]
     all_dst = Int[]
-    all_edata = []
 
     # Process each sample independently
     for (i, (agt, ctx)) in enumerate(zip(agt_pos, ctx_pos))
@@ -30,17 +28,22 @@ function create_filtered_interaction_graph(agt_pos::Vector{<:AbstractMatrix}, ct
         dist = sqrt.(sum(dist.^2, dims=1))[1,:,:]                # (num_agt, num_ctx)
 
         mask = dist .<= distance_threshold
-        indices = findall(mask)
+
+        # findall() for BitMatrix much faster than CuArray
+        indices = findall(mask) |> cpu
 
         # Retrieve across-samples src/dst indices
         if !isempty(indices)
-            agt_idc = getindex.(indices, 1)
-            ctx_idc = getindex.(indices, 2)
+            indices = VectorLanelet.indices_to_matrix(indices)
+            agt_idc = indices[1,:]
+            ctx_idc = indices[2,:]
             agt_offset = agt_counts[i]
             ctx_offset = ctx_counts[i]
 
-            append!(all_src, agt_idc .+ agt_offset)
-            append!(all_dst, ctx_idc .+ total_agts .+ ctx_offset)
+            # Replace append! with non-mutating vcat
+            # Note: use Vector as src and dst to construct GNNGraph is faster
+            all_src = vcat(all_src, agt_idc .+ agt_offset)
+            all_dst = vcat(all_dst, ctx_idc .+ total_agts .+ ctx_offset)
         end
     end
     agt_pos = reduce(hcat, agt_pos)
@@ -118,18 +121,25 @@ end
 
 """
     InteractionGraphModel forward pass
-Parameters:
-- g: agt-centered GNNGraphs
-- node_features: Concatenated agt-centered graphs node features
-- edge_features: Distances
-Returns:
+    Parameters:
+- data: (agt_features, agt_pos, ctx_features, ctx_pos, dist_thrd)
+- agt_features: (channels, timesteps, num_agents)
+- ctx_features: (channels, timesteps, num_ctxs)
+
+- agt_pos:  num_scenarios x (2, num_agents)
+- ctx_pos: num_scenarios x (2, num_ctxs)
+- dist_thrd: Distance threshold for creating edges
+
+    Returns:
 - Output agts features, shape (channels, num_agts)
 """
 function (interaction::InteractionGraphModel)(data)
     agt_features, agt_pos, ctx_features, ctx_pos, dist_thrd = data
-    num_agts = size(agt_pos, 2)
-    num_ctx = size(ctx_pos, 2)
-    g = create_filtered_interaction_graphs(agt_pos, ctx_pos, dist_thrd)
+    num_agts = size(agt_features,2)
+    num_ctx = size(ctx_features,2)
+
+    g = create_filtered_interaction_graph(agt_pos, ctx_pos, dist_thrd)
+    @show g.num_nodes, num_agts, num_ctx
     @assert g.num_nodes == num_agts + num_ctx "Number of nodes is not correct"
 
     if g.num_edges == 0
@@ -140,7 +150,7 @@ function (interaction::InteractionGraphModel)(data)
 
     node_features = hcat(agt_features, ctx_features)
     res = node_features
-    x = interaction.gat(g, node_features, g.edata.d)
+    x = interaction.gat(g, node_features, g.edata.e)
     x = interaction.norm(x)
     x = relu(x)
     x = interaction.output(x)
@@ -196,28 +206,38 @@ end
 """
     Forward pass for LaneletFusionPred
 Parameters:
-    - agt_features: (channels, timesteps, num_agents)
-    - agt_pos: (2, num_agents)
-    - polyline_graphs: each graph -> lanelet, node -> vector
-    - g_heteromaps: each graph -> map, node -> lanelet
-    - llt_pos: (2, num_lanelets)
+    - agt_features: num_scenarios x (channels, timesteps, num_agents)
+    - agt_pos: num_scenarios x (2, num_agents)
+    - polyline_graphs: graph -> lanelet, node -> vector
+    - g_heteromaps: graph -> map, node -> lanelet
+    - llt_pos: num_scenarios x (2, num_lanelets)
 """
-# TODO: Use profile to check the efficiency
-function (model::LaneletFusionPred)(agt_features, agt_pos, polyline_graphs, g_heteromaps, llt_pos)
-    emb_actor = model.actornet(agt_features)
-    emb_lanelets = model.ple(polyline_graphs, polyline_graphs.x)
-    emb_map = model.mapenc(g_heteromaps, emb_lanelets)
 
+# TODO: Use profile to check the efficiency
+function (model::LaneletFusionPred)(agt_features::Vector{<:AbstractArray}, agt_pos::Vector{<:AbstractMatrix},
+    polyline_graphs::Vector{<:GNNGraph}, g_heteromaps::Vector{<:GNNHeteroGraph}, llt_pos::Vector{<:AbstractMatrix})
+
+    # Concatenate agt features for batch processing
+    agt_features = cat(agt_features..., dims=3)
+
+    # TODO: Ego encoder
+    emb_actor = model.actornet(agt_features)
+    emb_lanelets = model.ple(polyline_graphs[1], polyline_graphs[1].x)
+    emb_map = model.mapenc(g_heteromaps[1], emb_lanelets)
+
+    # Duplicate emb_map num_scenarios times
+    emb_map = repeat(emb_map,1,length(llt_pos))     # (channels, num_scenarios x num_llts)
     emb_map = model.a2m((emb_map, llt_pos, emb_actor, agt_pos, model.dist_thrd.a2m))
-    @assert size(emb_map,2) == g_heteromaps.num_nodes[:lanelet]
-    emb_map = model.m2m(g_heteromaps, emb_map)
+
+    # TODO: need to batch the g_heteromaps
+    emb_map = model.m2m(batch(g_heteromaps), emb_map)      # (channels, num_scenarios x num_llts)
 
     # Assign the updated emb_map to map2agent_graphs
-    emb_actor = model.m2a((emb_actor, agt_pos, emb_map, llt_pos, model.dist_thrd.m2a))
+    emb_actor = model.m2a((emb_actor, agt_pos, emb_map, llt_pos, model.dist_thrd.m2a))      # (channels, num_scenarios x num_agents)
     emb_actor = model.a2a((emb_actor, agt_pos, emb_actor, agt_pos, model.dist_thrd.a2a))
-    @assert size(emb_actor) == (64, size(agt_pos, 2))
 
-    predictions = model.pred_head(emb_actor)
+    @assert size(emb_actor) == (64, size(agt_features, 3))
+    predictions = model.pred_head(emb_actor)      # (2, num_scenarios x num_agents)
     return predictions
 end
 

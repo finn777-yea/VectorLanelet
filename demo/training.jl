@@ -3,8 +3,6 @@ using Flux
 using Wandb, Logging, Dates
 using JLD2
 
-# TODO: preprocess_data for different models
-# X, Y = preprocess_data(factory, loaded_data.gb) |> device
 function setup_model(config::Dict{String, Any}, μ, σ)
     if config["model_name"] == "LaneletFusionPred"
         model = LaneletFusionPred(config, μ, σ)
@@ -25,7 +23,7 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
     lanelet_roadway, g_meta = load_map_data()
     @info "Preparing agent features on $(device)"
     agt_features, agt_pos_end = prepare_agent_features(lanelet_roadway) |> device
-    agt_features_upsampled = agent_features_upsample(agt_features) |> device
+    agt_features_upsampled = map(agent_features_upsample, agt_features) |> device
 
     @info "Preparing map features on $(device)"
     polyline_graphs, g_heteromap, llt_pos, μ, σ = prepare_map_features(lanelet_roadway, g_meta) |> device
@@ -45,6 +43,7 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
     num_epochs = config["num_epochs"]
 
     function loss_fn(pred, y)
+        y = reduce(hcat, y)
         mae = Flux.mae(pred, y)
         mse = Flux.mse(pred, y)
         return mae, mse
@@ -63,7 +62,7 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
     # Initial logging
     @info "Initial logging"
     x, y = train_data
-    pred = model(x, map_data...)
+    pred = model(x...)
     loss = loss_fn(pred, y)
     epoch = 0
     logging_callback(wblogger, "train", epoch, cpu(loss)..., log_step_increment=0)
@@ -76,7 +75,7 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
         # Training
         for (x, y) in train_loader
             loss, grad = Flux.withgradient(model) do model
-                pred = model(x, map_data...)
+                pred = model(x...)
                 loss_fn(pred, y)
             end
 
@@ -93,8 +92,10 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
         save_model_state(cpu(model), model_path)
     else
         @info "Plotting predictions"
-        pred = model(agent_data..., map_data...)
-        VectorLanelet.plot_predictions(cpu(agt_features), cpu(labels), cpu(pred))
+        # Only plot the first scenario
+        pred = model(VectorLanelet.preprocess_data(data, true)[1]...)
+        @show size(pred)
+        VectorLanelet.plot_predictions(cpu(agt_features)[1], cpu(labels)[1], cpu(pred))
     end
 end
 
