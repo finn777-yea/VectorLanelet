@@ -6,6 +6,7 @@ using Lanelet2.Routing
 using Lanelet2.Core
 using AutomotiveSimulator
 using Flux
+using Zygote
 using CUDA
 using GraphNeuralNetworks
 using Graphs
@@ -14,6 +15,8 @@ using Transformers
 using Statistics
 using LinearAlgebra
 using Plots
+
+Zygote.@nograd Flux.batch
 
 export create_residual_block,
        create_group_block,
