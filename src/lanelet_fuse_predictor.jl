@@ -209,34 +209,36 @@ Parameters:
     - agt_features: num_scenarios x (channels, timesteps, num_agents)
     - agt_pos: num_scenarios x (2, num_agents)
     - polyline_graphs: graph -> lanelet, node -> vector
+        num_scenarios x batched polyline graphs
     - g_heteromaps: graph -> map, node -> lanelet
+        num_scenarios x routing_graph
     - llt_pos: num_scenarios x (2, num_lanelets)
 """
 
-# TODO: Use profile to check the efficiency
+# TODO: Use profile to check the efficiency of the forward function
 function (model::LaneletFusionPred)(agt_features::Vector{<:AbstractArray}, agt_pos::Vector{<:AbstractMatrix},
-    polyline_graphs::Vector{<:GNNGraph}, g_heteromaps::Vector{<:GNNHeteroGraph}, llt_pos::Vector{<:AbstractMatrix})
+    polyline_graphs::Vector{<:GNNGraph}, g_heteromaps, llt_pos::Vector{<:AbstractMatrix})
 
     # Concatenate agt features for batch processing
     agt_features = cat(agt_features..., dims=3)
 
     # TODO: Ego encoder
     emb_actor = model.actornet(agt_features)
+    # TODO: Consider how to process the polyline_graphs(vector of batched fully-connected graphs)
     emb_lanelets = model.ple(polyline_graphs[1], polyline_graphs[1].x)
-    emb_map = model.mapenc(g_heteromaps[1], emb_lanelets)
+    emb_lanelets = repeat(emb_lanelets,1,length(llt_pos))     # (channels, num_scenarios x num_llts)
+    emb_map = model.mapenc(g_heteromaps, emb_lanelets)
 
     # Duplicate emb_map num_scenarios times
-    emb_map = repeat(emb_map,1,length(llt_pos))     # (channels, num_scenarios x num_llts)
     emb_map = model.a2m((emb_map, llt_pos, emb_actor, agt_pos, model.dist_thrd.a2m))
-
-    # TODO: need to batch the g_heteromaps
-    emb_map = model.m2m(batch(g_heteromaps), emb_map)      # (channels, num_scenarios x num_llts)
+    emb_map = model.m2m(g_heteromaps, emb_map)      # (channels, num_scenarios x num_llts)
 
     # Assign the updated emb_map to map2agent_graphs
     emb_actor = model.m2a((emb_actor, agt_pos, emb_map, llt_pos, model.dist_thrd.m2a))      # (channels, num_scenarios x num_agents)
     emb_actor = model.a2a((emb_actor, agt_pos, emb_actor, agt_pos, model.dist_thrd.a2a))
 
     @assert size(emb_actor) == (64, size(agt_features, 3))
+    # TODO: should be vec or?
     predictions = model.pred_head(emb_actor)      # (2, num_scenarios x num_agents)
     return predictions
 end

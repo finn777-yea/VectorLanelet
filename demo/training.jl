@@ -3,6 +3,17 @@ using Flux
 using Wandb, Logging, Dates
 using JLD2
 
+function batch_heteromaps(train_data_x)
+    # Create a new named tuple with the same fields but with batched g_heteromaps
+    return (
+        agt_features_upsampled = train_data_x.agt_features_upsampled,
+        agt_current_pos = train_data_x.agt_current_pos,
+        polyline_graphs = train_data_x.polyline_graphs,
+        g_heteromaps = Flux.batch(train_data_x.g_heteromaps),
+        llt_pos = train_data_x.llt_pos,
+    )
+end
+
 function setup_model(config::Dict{String, Any}, μ, σ)
     if config["model_name"] == "LaneletFusionPred"
         model = LaneletFusionPred(config, μ, σ)
@@ -50,7 +61,7 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
     # Initial logging
     @info "Initial logging"
     x, y = train_data
-    pred = model(x...)
+    pred = model(batch_heteromaps(x)...)
     loss = loss_fn(pred, y)
     epoch = 0
     logging_callback(wblogger, "train", epoch, cpu(loss)..., log_step_increment=0)
@@ -62,8 +73,9 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
 
         # Training
         for (x, y) in train_loader
+            x_batch = batch_heteromaps(x)
             loss, grad = Flux.withgradient(model) do model
-                pred = model(x...)
+                pred = model(x_batch...)
                 loss_fn(pred, y)
             end
 
@@ -81,9 +93,12 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
     else
         @info "Plotting predictions"
         # Only plot the first scenario
-        pred = model(VectorLanelet.preprocess_data(data, true)[1]...)
-        @show size(pred)
-        VectorLanelet.plot_predictions(cpu(agt_features)[1], cpu(labels)[1], cpu(pred))
+        # TODO: extend this
+        training_data, training_labels = VectorLanelet.preprocess_data(data)
+        pred = model(batch_heteromaps(training_data)...)
+        plot_scenario_idx = 1
+        @show num_veh = size(training_labels[plot_scenario_idx], 2)
+        VectorLanelet.plot_predictions(cpu(training_data.agt_features_upsampled)[plot_scenario_idx], cpu(training_labels)[plot_scenario_idx], cpu(pred[:,1:num_veh]))
     end
 end
 

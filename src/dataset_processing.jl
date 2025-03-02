@@ -1,5 +1,5 @@
 """
-Load and prepare the lanelet map and graph data
+    Load and prepare the lanelet map and graph data
 """
 function load_map_data()
     # Load the lanelet map
@@ -23,7 +23,7 @@ function load_map_data()
 end
 
 """
-Group agents that are close to each other into scenarios based on spatial proximity
+    Group agents that are close to each other into scenarios based on spatial proximity
 """
 function cluster_agents_into_scenarios(positions::Matrix{Float32}, distance_threshold::Float32=30.0f0)
     num_agents = size(positions, 2)
@@ -65,10 +65,11 @@ Prepare agent features and agent end position from lanelet centerlines
     - agt_pos_end: num_scenarios x (2, num_agents)
 """
 function prepare_agent_features(lanelet_roadway::LaneletRoadway, save_features::Bool=false)
-    # First collect all agent features as before
+
     temp_features = Vector{Matrix{Float32}}()
     temp_pos_end = Vector{Vector{Float32}}()
     for lanelet in values(lanelet_roadway.lanelets)
+
         curve = lanelet.curve
         push!(temp_features, hcat([curve[1].pos.x, curve[1].pos.y], [curve[2].pos.x, curve[2].pos.y]))
         push!(temp_pos_end, [curve[end].pos.x, curve[end].pos.y])
@@ -79,6 +80,7 @@ function prepare_agent_features(lanelet_roadway::LaneletRoadway, save_features::
 
     # Group agents into scenarios
     scenarios = cluster_agents_into_scenarios(initial_positions)
+    @show length(scenarios)
 
     # Reorganize features and end positions by scenarios
     agt_features_by_scenario = []
@@ -91,7 +93,6 @@ function prepare_agent_features(lanelet_roadway::LaneletRoadway, save_features::
         push!(agt_features_by_scenario, scenario_features)
         push!(agt_pos_end_by_scenario, scenario_pos_end)
     end
-
 
     if save_features
         cache_path = joinpath(@__DIR__, "../res/agent_features.jld2")
@@ -141,7 +142,7 @@ function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false
             # Get start and end points of each polyline segment
             start_point = centerline[i]
             end_point = centerline[i+1]
-            # TODO: node(vector) features completion
+            # TODO: complete node(vector) features
             # Extract x,y coordinates for start and end points
             start_x = start_point.pos.x
             start_y = start_point.pos.y
@@ -235,20 +236,22 @@ function preprocess_data(data, overfit::Bool=false)
     agent_data, map_data, labels = data
     agt_current_pos = [i[:,end,:] for i in agent_data.agt_features_upsampled]
     polyline_graphs = [map_data.polyline_graphs for _ in 1:num_scenarios]
-    g_heteromap = [map_data.g_heteromap for _ in 1:num_scenarios]
+    g_heteromaps = [map_data.g_heteromap for _ in 1:num_scenarios]
     llt_pos = [map_data.llt_pos for _ in 1:num_scenarios]
 
 
     if overfit
         @info "Performing overfitting"
-        X = (agent_data.agt_features_upsampled[1,:], agt_current_pos[1,:],
-        polyline_graphs[1,:], g_heteromap[1,:], llt_pos[1,:])
-        Y = labels[1,:]
+
+        training_x = (;agt_features_upsampled=agent_data.agt_features_upsampled[1,:],
+        agt_current_pos=agt_current_pos[1,:],
+        polyline_graphs=polyline_graphs[1,:], g_heteromaps=g_heteromaps[1,:], llt_pos=llt_pos[1,:])
+        training_y = labels[1,:]
     else
-        X = (;agent_data.agt_features_upsampled, agt_current_pos,
-        polyline_graphs, g_heteromap, llt_pos)
-        Y = labels
+        training_x = (;agent_data.agt_features_upsampled, agt_current_pos,
+        polyline_graphs, g_heteromaps, llt_pos)
+        training_y = labels
     end
 
-    return X, Y
+    return training_x, training_y
 end
