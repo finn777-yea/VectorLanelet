@@ -231,7 +231,7 @@ expect data to include:
     - map_data: (polyline_graphs, g_heteromap, llt_pos)
     - labels: (2, timesteps, num_agents)
 """
-function preprocess_data(data, overfit::Bool=false)
+function preprocess_data(data, overfit::Bool=false; overfit_idx::Int=1)
     num_scenarios = length(data.agent_data.agt_features_upsampled)
     agent_data, map_data, labels = data
     agt_current_pos = [i[:,end,:] for i in agent_data.agt_features_upsampled]
@@ -242,11 +242,10 @@ function preprocess_data(data, overfit::Bool=false)
 
     if overfit
         @info "Performing overfitting"
-
-        training_x = (;agt_features_upsampled=agent_data.agt_features_upsampled[1,:],
-        agt_current_pos=agt_current_pos[1,:],
-        polyline_graphs=polyline_graphs[1,:], g_heteromaps=g_heteromaps[1,:], llt_pos=llt_pos[1,:])
-        training_y = labels[1,:]
+        training_x = (;agt_features_upsampled=agent_data.agt_features_upsampled[overfit_idx,:],
+        agt_current_pos=agt_current_pos[overfit_idx,:],
+        polyline_graphs=polyline_graphs[overfit_idx,:], g_heteromaps=g_heteromaps[overfit_idx,:], llt_pos=llt_pos[overfit_idx,:])
+        training_y = labels[overfit_idx,:]
     else
         training_x = (;agent_data.agt_features_upsampled, agt_current_pos,
         polyline_graphs, g_heteromaps, llt_pos)

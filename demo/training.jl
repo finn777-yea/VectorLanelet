@@ -49,7 +49,7 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
     end
 
     # DataLoader
-    train_data = VectorLanelet.preprocess_data(data, config["overfit"])
+    train_data = VectorLanelet.preprocess_data(data, config["overfit"], overfit_idx=config["overfit_idx"])
     batch_size = config["overfit"] ? 1 : config["batch_size"]
 
     train_loader = Flux.DataLoader(
@@ -92,13 +92,11 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
         save_model_state(cpu(model), model_path)
     else
         @info "Plotting predictions"
-        # Only plot the first scenario
-        # TODO: extend this
         training_data, training_labels = VectorLanelet.preprocess_data(data)
         pred = model(batch_heteromaps(training_data)...)
-        plot_scenario_idx = 1
-        @show num_veh = size(training_labels[plot_scenario_idx], 2)
-        VectorLanelet.plot_predictions(cpu(training_data.agt_features_upsampled)[plot_scenario_idx], cpu(training_labels)[plot_scenario_idx], cpu(pred[:,1:num_veh]))
+        overfit_idx = config["overfit_idx"]
+        @show num_veh = size(training_labels[overfit_idx], 2)
+        VectorLanelet.plot_predictions(cpu(training_data.agt_features_upsampled)[overfit_idx], cpu(training_labels)[overfit_idx], cpu(pred[:,1:num_veh]))
     end
 end
 
