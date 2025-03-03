@@ -8,7 +8,7 @@ Parameters:
 Returns:
 - g: GNNGraph for each sample in the batch
 """
-function create_filtered_interaction_graph(agt_pos::Vector{T}, ctx_pos::Vector{T}, distance_threshold::Real, normalize_dist::Bool=true) where T <: AbstractMatrix
+function create_filtered_interaction_graph(agt_pos::Vector{T}, ctx_pos::Vector{T}, distance_threshold::Real, normalize_dist::Bool=false) where T <: AbstractMatrix
     # Process each sample independently
     @assert length(agt_pos) == length(ctx_pos) "Number of samples must match"
 
@@ -49,9 +49,10 @@ function create_filtered_interaction_graph(agt_pos::Vector{T}, ctx_pos::Vector{T
     agt_pos = reduce(hcat, agt_pos)
     ctx_pos = reduce(hcat, ctx_pos)
     global_pos = hcat(agt_pos, ctx_pos)
-    dist = global_pos[:,all_src] .- global_pos[:,all_dst]    # (2, num_edges)
+    @show dist = global_pos[:,all_src] .- global_pos[:,all_dst]    # (2, num_edges)
 
     # Handle empty case
+    # no connection in each scenario
     if isempty(all_src)
         return GNNGraph(total_agts + total_ctxs, dir=:in)
     end
@@ -59,8 +60,8 @@ function create_filtered_interaction_graph(agt_pos::Vector{T}, ctx_pos::Vector{T
     # Process edge data
     if normalize_dist
         # TODO: normalize edge data
-        μ, σ = calculate_mean_and_std(dist, dims=2)
-        dist = (dist .- μ) ./ σ
+        @show μ, σ = calculate_mean_and_std(dist, dims=2)       # dist: 2, num_edges
+        @show dist = (dist .- μ) ./ (σ .+ 1e-6)
     end
 
     # Create single graph with all samples
@@ -99,11 +100,11 @@ Parameters:
 - num_heads: Number of attention heads
 """
 function InteractionGraphModel(n_in::Int, e_in::Int, out_dim::Int; num_heads::Int=2)
-    ng = 32
+    ng = 1
     head_dim = div(out_dim, num_heads)
     gat = GATConv((n_in, e_in)=>head_dim, heads=num_heads, add_self_loops=false)
     # TODO: Config layer norm
-    norm = GroupNorm(out_dim, gcd(1, out_dim))      # LayerNorm
+    norm = GroupNorm(out_dim, gcd(ng, out_dim))      # LayerNorm
     # norm = LayerNorm(out_dim)
     output = Dense(out_dim=>out_dim)
     agt_res = SkipConnection(
@@ -111,7 +112,7 @@ function InteractionGraphModel(n_in::Int, e_in::Int, out_dim::Int; num_heads::In
             Dense(out_dim=>out_dim),
             relu,
             Dense(out_dim=>out_dim),
-            GroupNorm(out_dim, gcd(32, out_dim)),
+            GroupNorm(out_dim, gcd(ng, out_dim)),
             relu
         ),
         +
@@ -139,10 +140,11 @@ function (interaction::InteractionGraphModel)(data)
     num_ctx = size(ctx_features,2)
 
     g = create_filtered_interaction_graph(agt_pos, ctx_pos, dist_thrd)
-    @show g.num_nodes, num_agts, num_ctx
+    @show num_agts, num_ctx
     @assert g.num_nodes == num_agts + num_ctx "Number of nodes is not correct"
 
     if g.num_edges == 0
+        @info "No interaction"
         agt_features = interaction.agt_res(agt_features)
         agt_features = relu(agt_features)
         return agt_features
@@ -226,10 +228,10 @@ function (model::LaneletFusionPred)(agt_features::Vector{<:AbstractArray}, agt_p
     emb_actor = model.actornet(agt_features)
     # TODO: Consider how to process the polyline_graphs(vector of batched fully-connected graphs)
     emb_lanelets = model.ple(polyline_graphs[1], polyline_graphs[1].x)
+    # Duplicate emb_map num_scenarios times
     emb_lanelets = repeat(emb_lanelets,1,length(llt_pos))     # (channels, num_scenarios x num_llts)
     emb_map = model.mapenc(g_heteromaps, emb_lanelets)
 
-    # Duplicate emb_map num_scenarios times
     emb_map = model.a2m((emb_map, llt_pos, emb_actor, agt_pos, model.dist_thrd.a2m))
     emb_map = model.m2m(g_heteromaps, emb_map)      # (channels, num_scenarios x num_llts)
 
@@ -238,7 +240,6 @@ function (model::LaneletFusionPred)(agt_features::Vector{<:AbstractArray}, agt_p
     emb_actor = model.a2a((emb_actor, agt_pos, emb_actor, agt_pos, model.dist_thrd.a2a))
 
     @assert size(emb_actor) == (64, size(agt_features, 3))
-    # TODO: should be vec or?
     predictions = model.pred_head(emb_actor)      # (2, num_scenarios x num_agents)
     return predictions
 end
