@@ -3,6 +3,7 @@ using Flux
 using Wandb, Logging, Dates
 using JLD2
 
+# Create a new named tuple with the same fields but with batched g_heteromaps
 function batch_heteromaps(train_data_x)
     # Create a new named tuple with the same fields but with batched g_heteromaps
     return (
@@ -49,7 +50,7 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
     end
 
     # DataLoader
-    train_data = VectorLanelet.preprocess_data(data, config["overfit"], overfit_idx=config["overfit_idx"])
+    train_data = VectorLanelet.preprocess_data(data, overfit=config["overfit"], overfit_idx=config["overfit_idx"])
     batch_size = config["overfit"] ? 1 : config["batch_size"]
 
     train_loader = Flux.DataLoader(
@@ -92,11 +93,11 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
         save_model_state(cpu(model), model_path)
     else
         @info "Plotting predictions"
-        training_data, training_labels = VectorLanelet.preprocess_data(data)
-        pred = model(batch_heteromaps(training_data)...)
-        overfit_idx = config["overfit_idx"]
-        @show num_veh = size(training_labels[overfit_idx], 2)
-        VectorLanelet.plot_predictions(cpu(training_data.agt_features_upsampled)[overfit_idx], cpu(training_labels)[overfit_idx], cpu(pred[:,1:num_veh]))
+        # TODO: retrieve the actual pred of the corresponding scene
+        plot_data, plot_label = VectorLanelet.preprocess_data(data, overfit=true, overfit_idx=config["overfit_idx"])
+        pred = model(batch_heteromaps(plot_data)...)
+        @show num_veh = length(plot_label[1])
+        VectorLanelet.plot_predictions(cpu(plot_data.agt_features_upsampled[1]), cpu(plot_label[1]), cpu(pred))
     end
 end
 
