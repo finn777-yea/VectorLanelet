@@ -1,9 +1,12 @@
-function create_residual_block(in_channels , out_channels; kernel_size=3, stride, norm="GN", ng=32, act=true)
+# ng: dimensions length in each group
+function create_residual_block(in_channels::Int, out_channels::Int;
+    kernel_size=3, stride=1, norm="GN", ng=32, act=true)
     filter = (kernel_size,)
 
     # Main convolution branch
     main_branch = Chain(
         Conv(filter, in_channels => out_channels, stride=stride, pad=SamePad()),
+        # TODO: check normalization
         norm == "GN" ? GroupNorm(out_channels, gcd(ng, out_channels)) : BatchNorm(out_channels),
         relu,
         Conv(filter, out_channels => out_channels, stride=1, pad=SamePad()),
@@ -35,13 +38,13 @@ Each group contains a first layer with stride 2 and the following layers with st
     - input_channels: input channels of the group
     - output_channels: output channels of the group
 """
-function create_group_block(i, input_channels, output_channels; kernel_size=3, norm="GN")
+function create_group_block(i, input_channels, output_channels; kernel_size=3, norm="GN", ng=32)
     first_layer = if i == 1
-        create_residual_block(input_channels, output_channels, kernel_size=kernel_size, stride=1, norm=norm)
+        create_residual_block(input_channels, output_channels; kernel_size, stride=1, norm, ng)
     else
-        create_residual_block(input_channels, output_channels, kernel_size=kernel_size, stride=2, norm=norm)
+        create_residual_block(input_channels, output_channels; kernel_size, stride=2, norm, ng)
     end
-    second_layer = create_residual_block(output_channels, output_channels, kernel_size=kernel_size, stride=1, norm=norm)
+    second_layer = create_residual_block(output_channels, output_channels; kernel_size, stride=1, norm, ng)
     return Chain(first_layer, second_layer)
 end
 
@@ -49,8 +52,8 @@ end
     Encoder for the node features at vector level
     Contains 2 dense layers and batch/layer normalization
 """
-function create_node_encoder(in_channels, out_channels, norm="layernorm")
-    norm_layer = norm == "layernorm" ? LayerNorm : BatchNorm
+function create_node_encoder(in_channels, out_channels, norm="LN")
+    norm_layer = norm == "LN" ? LayerNorm : BatchNorm
     linear1 = Dense(in_channels, out_channels)
     norm1 = norm_layer(out_channels)
     linear2 = Dense(out_channels, out_channels)

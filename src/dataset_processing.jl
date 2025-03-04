@@ -25,7 +25,7 @@ end
 """
     Group agents that are close to each other into scenarios based on spatial proximity
 """
-function cluster_agents_into_scenarios(positions::Matrix{Float32}, distance_threshold::Float32=30.0f0)
+function cluster_agents_into_scenarios(positions::Matrix{Float32}, distance_threshold::Float32=0.001f0)
     num_agents = size(positions, 2)
     assigned = falses(num_agents)
     scenarios = Vector{Vector{Int}}()
@@ -64,7 +64,7 @@ Prepare agent features and agent end position from lanelet centerlines
     - agt_features: num_scenarios x (channels, time_step, num_agents)
     - agt_pos_end: num_scenarios x (2, num_agents)
 """
-function prepare_agent_features(lanelet_roadway::LaneletRoadway, save_features::Bool=false)
+function prepare_agent_features(lanelet_roadway::LaneletRoadway, save_features::Bool=false; cluster_thrd::Float32=20.0f0)
 
     temp_features = Vector{Matrix{Float32}}()
     temp_pos_end = Vector{Vector{Float32}}()
@@ -79,7 +79,7 @@ function prepare_agent_features(lanelet_roadway::LaneletRoadway, save_features::
     initial_positions = hcat([f[:,1] for f in temp_features]...)
 
     # Group agents into scenarios
-    scenarios = cluster_agents_into_scenarios(initial_positions)
+    scenarios = cluster_agents_into_scenarios(initial_positions, cluster_thrd)
     @show length(scenarios)
 
     # Reorganize features and end positions by scenarios
@@ -111,7 +111,6 @@ Prepare map features stored in polyline level GNNGraph(fulled-connected graph)
         - polyline id
     routing_graph -> g_heteromap
 """
-# TODO: is it possible to acess only one partial routing graph
 function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false)
     polyline_graphs = GNNGraph[]
     pos_llt = []
@@ -209,7 +208,7 @@ function prepare_data(config, device::Function)
     lanelet_roadway, g_meta = load_map_data()
 
     @info "Preparing agent features on $(device)"
-    agt_features, agt_pos_end = prepare_agent_features(lanelet_roadway) |> device
+    agt_features, agt_pos_end = prepare_agent_features(lanelet_roadway, cluster_thrd=config["cluster_thrd"]) |> device
     agt_features_upsampled = map(agent_features_upsample, agt_features) |> device
 
     @info "Preparing map features on $(device)"
@@ -231,7 +230,7 @@ expect data to include:
     - map_data: (polyline_graphs, g_heteromap, llt_pos)
     - labels: (2, timesteps, num_agents)
 """
-function preprocess_data(data, overfit::Bool=false; overfit_idx::Int=1)
+function preprocess_data(data; overfit::Bool=false, overfit_idx::Int=1)
     num_scenarios = length(data.agent_data.agt_features_upsampled)
     agent_data, map_data, labels = data
     agt_current_pos = [i[:,end,:] for i in agent_data.agt_features_upsampled]

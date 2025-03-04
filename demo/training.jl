@@ -5,7 +5,6 @@ using JLD2
 
 # Create a new named tuple with the same fields but with batched g_heteromaps
 function batch_heteromaps(train_data_x)
-    # Create a new named tuple with the same fields but with batched g_heteromaps
     return (
         agt_features_upsampled = train_data_x.agt_features_upsampled,
         agt_current_pos = train_data_x.agt_current_pos,

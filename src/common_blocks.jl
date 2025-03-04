@@ -8,15 +8,16 @@ end
 
 Flux.@layer ActorNet_Simp
 
-function ActorNet_Simp(in_channels, group_out_channels::Vector{Int}, μ::Union{Vector, CuArray}, σ::Union{Vector, CuArray}, kernel_size::Int=3)
+function ActorNet_Simp(in_channels, group_out_channels::Vector{Int}, μ::Union{Vector, CuArray}, σ::Union{Vector, CuArray};
+    kernel_size::Int=3, norm::String="GN", ng::Int=32)
     agt_preprocess = create_agt_preprocess_block(μ, σ)
     out_channels = group_out_channels[end]
     groups = []
     for i in eachindex(group_out_channels)
         if i == 1
-            push!(groups, create_group_block(i, in_channels, group_out_channels[i], kernel_size=kernel_size))
+            push!(groups, create_group_block(i, in_channels, group_out_channels[i], kernel_size=kernel_size, norm=norm, ng=ng))
         else
-            push!(groups, create_group_block(i, group_out_channels[i-1], group_out_channels[i], kernel_size=kernel_size))
+            push!(groups, create_group_block(i, group_out_channels[i-1], group_out_channels[i], kernel_size=kernel_size, norm=norm, ng=ng))
         end
     end
     groups = Chain(groups...)
@@ -25,20 +26,19 @@ function ActorNet_Simp(in_channels, group_out_channels::Vector{Int}, μ::Union{V
     for i in eachindex(group_out_channels)
         lat_connection = Chain(
             Conv((1,), group_out_channels[i]=>out_channels, stride=1),
-            GroupNorm(out_channels, gcd(32, out_channels))
+            GroupNorm(out_channels, gcd(ng, out_channels))
         )
         push!(lateral, lat_connection)
     end
     lateral = Chain(lateral...)
 
-    output_block = create_residual_block(out_channels, out_channels, kernel_size=kernel_size, stride=1)
+    output_block = create_residual_block(out_channels, out_channels, kernel_size=kernel_size, stride=1, ng=ng)
 
     ActorNet_Simp(agt_preprocess, groups, lateral, output_block)
 end
 
 function (actornet::ActorNet_Simp)(agt_features)
     agt_features = actornet.agt_preprocess(agt_features)
-    @assert size(agt_features, 2) == 2      # Channel dimension:[x,y] in the 2nd dimension
     outputs = Flux.activations(actornet.groups, agt_features)
 
     out = actornet.lateral[end](outputs[end])
@@ -53,6 +53,14 @@ function (actornet::ActorNet_Simp)(agt_features)
 end
 
 # ---- PolylineEncoder ----
+"""
+    PolylineEncoder
+    Takes a batch of graphs and node features as input_features
+    NodeEncoder -> MaxPooling -> Duplication -> Concatenate -> OutputLayer -> MaxPooling
+
+    - g: Fully connected graph, representing a lanelet, with nodes as vectors of centerline
+    - vector_features: (2, num_vectors)
+"""
 struct PolylineEncoder
     vec_preprocess::Chain
     layers::Chain
@@ -61,11 +69,12 @@ end
 
 Flux.@layer PolylineEncoder
 
-function PolylineEncoder(in_channels, out_channels, μ::Union{Vector, CuArray}, σ::Union{Vector, CuArray}, num_layers::Int=3, hidden_unit::Int=64)
+function PolylineEncoder(in_channels, out_channels, μ::Union{Vector, CuArray}, σ::Union{Vector, CuArray};
+    num_layers::Int=3, hidden_unit::Int=64, norm::String="LN")
     vec_preprocess = VectorLanelet.create_map_preprocess_block(μ, σ)
     layers = []
-    for i in 1:num_layers
-        push!(layers, create_node_encoder(in_channels, hidden_unit))
+    for _ in 1:num_layers
+        push!(layers, create_node_encoder(in_channels, hidden_unit, norm))
         in_channels = hidden_unit * 2
     end
     layers = Chain(layers...)
@@ -74,14 +83,6 @@ function PolylineEncoder(in_channels, out_channels, μ::Union{Vector, CuArray}, 
 end
 
 
-"""
-Forward pass for PolylineEncoder
-    Takes a batch of graphs and node features as input_features
-    NodeEncoder -> MaxPooling -> Duplication -> Concatenate -> OutputLayer -> MaxPooling
-
-    - g: Fully connected graph, representing a lanelet, with nodes as vectors of centerline
-    - vector_features: (2, num_vectors)
-"""
 function (pline::PolylineEncoder)(g::GNNGraph, vector_features::AbstractMatrix)
     vector_features = pline.vec_preprocess(vector_features)
     max_pool = GlobalPool(max)

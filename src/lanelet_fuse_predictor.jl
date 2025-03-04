@@ -49,7 +49,7 @@ function create_filtered_interaction_graph(agt_pos::Vector{T}, ctx_pos::Vector{T
     agt_pos = reduce(hcat, agt_pos)
     ctx_pos = reduce(hcat, ctx_pos)
     global_pos = hcat(agt_pos, ctx_pos)
-    @show dist = global_pos[:,all_src] .- global_pos[:,all_dst]    # (2, num_edges)
+    dist = global_pos[:,all_src] .- global_pos[:,all_dst]    # (2, num_edges)
 
     # Handle empty case
     # no connection in each scenario
@@ -60,8 +60,8 @@ function create_filtered_interaction_graph(agt_pos::Vector{T}, ctx_pos::Vector{T
     # Process edge data
     if normalize_dist
         # TODO: normalize edge data
-        @show μ, σ = calculate_mean_and_std(dist, dims=2)       # dist: 2, num_edges
-        @show dist = (dist .- μ) ./ (σ .+ 1e-6)
+        μ, σ = calculate_mean_and_std(dist, dims=2)       # dist: 2, num_edges
+        dist = (dist .- μ) ./ (σ .+ 1e-6)
     end
 
     # Create single graph with all samples
@@ -99,20 +99,20 @@ Parameters:
 - head_dim: Dimension of each attention head
 - num_heads: Number of attention heads
 """
-function InteractionGraphModel(n_in::Int, e_in::Int, out_dim::Int; num_heads::Int=2)
-    ng = 1
+function InteractionGraphModel(n_in::Int, e_in::Int, out_dim::Int; num_heads::Int=2, norm="GN", ng=32)
     head_dim = div(out_dim, num_heads)
     gat = GATConv((n_in, e_in)=>head_dim, heads=num_heads, add_self_loops=false)
     # TODO: Config layer norm
-    norm = GroupNorm(out_dim, gcd(ng, out_dim))      # LayerNorm
-    # norm = LayerNorm(out_dim)
+    # norm = GroupNorm(out_dim, gcd(ng, out_dim))      # LayerNorm
+    norm = norm == "GN" ? GroupNorm(out_dim, gcd(ng, out_dim)) : LayerNorm(out_dim)
     output = Dense(out_dim=>out_dim)
     agt_res = SkipConnection(
         Chain(
             Dense(out_dim=>out_dim),
             relu,
             Dense(out_dim=>out_dim),
-            GroupNorm(out_dim, gcd(ng, out_dim)),
+            # GroupNorm(out_dim, gcd(ng, out_dim)),
+            LayerNorm(out_dim),
             relu
         ),
         +
@@ -179,8 +179,14 @@ end
 Flux.@layer LaneletFusionPred
 
 function LaneletFusionPred(config::Dict{String, Any}, μ, σ)
-    actornet = ActorNet_Simp(config["actornet_in_channels"], config["group_out_channels"], μ, σ)
-    ple = PolylineEncoder(config["ple_in_channels"], config["ple_out_channels"], μ, σ, config["ple_num_layers"], config["ple_hidden_unit"])
+    actornet = ActorNet_Simp(config["actornet_in_channels"], config["group_out_channels"], μ, σ;
+        kernel_size=config["actornet_kernel_size"], norm=config["actornet_norm"], ng=config["actornet_ng"]
+    )
+
+    ple = PolylineEncoder(config["ple_in_channels"], config["ple_out_channels"], μ, σ;
+        num_layers=config["ple_num_layers"], hidden_unit=config["ple_hidden_unit"], norm=config["ple_norm"]
+    )
+
     mapenc = MapEncoder(config["mapenc_hidden_unit"], config["mapenc_hidden_unit"], config["mapenc_num_layers"])
 
     # Fusion setup
@@ -188,8 +194,10 @@ function LaneletFusionPred(config::Dict{String, Any}, μ, σ)
     m2a_layers = InteractionGraphModel[]
     a2a_layers = InteractionGraphModel[]
     for _ in config["fusion_num_layers"]
-        push!(a2m_layers, InteractionGraphModel(config["fusion_n_in"], config["fusion_e_in"], config["fusion_out_dim"]))
-        push!(m2a_layers, InteractionGraphModel(config["fusion_n_in"], config["fusion_e_in"], config["fusion_out_dim"]))
+        push!(a2m_layers, InteractionGraphModel(config["fusion_n_in"], config["fusion_e_in"], config["fusion_out_dim"];
+            num_heads=config["fusion_num_heads"], norm=config["fusion_norm"], ng=config["fusion_ng"]))
+        push!(m2a_layers, InteractionGraphModel(config["fusion_n_in"], config["fusion_e_in"], config["fusion_out_dim"];
+            num_heads=config["fusion_num_heads"], norm=config["fusion_norm"], ng=config["fusion_ng"]))
         push!(a2a_layers, InteractionGraphModel(config["fusion_n_in"], config["fusion_e_in"], config["fusion_out_dim"]))
     end
     a2m = Chain(a2m_layers...)
@@ -230,7 +238,7 @@ function (model::LaneletFusionPred)(agt_features::Vector{<:AbstractArray}, agt_p
     emb_lanelets = model.ple(polyline_graphs[1], polyline_graphs[1].x)
     # Duplicate emb_map num_scenarios times
     emb_lanelets = repeat(emb_lanelets,1,length(llt_pos))     # (channels, num_scenarios x num_llts)
-    emb_map = model.mapenc(g_heteromaps, emb_lanelets)
+    emb_map = model.mapenc(g_heteromaps, emb_lanelets)        # (channels, num_scenarios x num_llts)
 
     emb_map = model.a2m((emb_map, llt_pos, emb_actor, agt_pos, model.dist_thrd.a2m))
     emb_map = model.m2m(g_heteromaps, emb_map)      # (channels, num_scenarios x num_llts)
