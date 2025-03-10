@@ -92,11 +92,10 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
         save_model_state(cpu(model), model_path)
     else
         @info "Plotting predictions"
-        # TODO: retrieve the actual pred of the corresponding scene
-        plot_data, plot_label = VectorLanelet.preprocess_data(data, overfit=true, overfit_idx=config["overfit_idx"])
-        pred = model(batch_heteromaps(plot_data)...)
-        @show num_veh = length(plot_label[1])
-        VectorLanelet.plot_predictions(cpu(plot_data.agt_features_upsampled[1]), cpu(plot_label[1]), cpu(pred))
+        pred = model(batch_heteromaps(x)...)
+
+        VectorLanelet.plot_predictions(cpu(x.agt_features), cpu(y), cpu(pred),
+            grid_layout=config["plot_grid"], scenario_indices=config["plot_scenario_indices"])
     end
 end
 

@@ -16,7 +16,7 @@ using Statistics
 using LinearAlgebra
 using Plots
 
-Zygote.@nograd Flux.batch
+# Zygote.@nograd Flux.batch
 
 export create_residual_block,
        create_group_block,
@@ -43,8 +43,7 @@ include("dataset_processing.jl")
 export extract_gml_src_dst
 include("utils.jl")
 
-export ModelFactory
-include("abstract_model.jl")
+include("validation_plot.jl")
 
 export ActorNet_Simp,
        PolylineEncoder,
