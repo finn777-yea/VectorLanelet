@@ -1,4 +1,4 @@
-# ng: dimensions length in each group
+# ng: expected number of groups for GroupNorm
 function create_residual_block(in_channels::Int, out_channels::Int;
     kernel_size=3, stride=1, norm="GN", ng=32, act=true)
     filter = (kernel_size,)
@@ -141,11 +141,11 @@ function create_hetero_conv(in_channels, out_channels)
     suc_rel = (:lanelet, :suc, :lanelet)
 
     heteroconv = HeteroGraphConv(
-        left_rel => GATConv(in_channels=>out_channels),
-        right_rel => GATConv(in_channels=>out_channels),
-        adj_left_rel => GATConv(in_channels=>out_channels),
-        adj_right_rel => GATConv(in_channels=>out_channels),
-        suc_rel => GATConv(in_channels=>out_channels)
+        left_rel => GATv2Conv(in_channels=>out_channels),
+        right_rel => GATv2Conv(in_channels=>out_channels),
+        adj_left_rel => GATv2Conv(in_channels=>out_channels),
+        adj_right_rel => GATv2Conv(in_channels=>out_channels),
+        suc_rel => GATv2Conv(in_channels=>out_channels)
     )
 end
 

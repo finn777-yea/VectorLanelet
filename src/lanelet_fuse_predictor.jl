@@ -49,7 +49,7 @@ function create_filtered_interaction_graph(agt_pos::Vector{T}, ctx_pos::Vector{T
     agt_pos = reduce(hcat, agt_pos)
     ctx_pos = reduce(hcat, ctx_pos)
     global_pos = hcat(agt_pos, ctx_pos)
-    dist = global_pos[:,all_src] .- global_pos[:,all_dst]    # (2, num_edges)
+    dist = global_pos[:,all_src] - global_pos[:,all_dst]    # (2, num_edges)
 
     # Handle empty case
     # no connection in each scenario
@@ -59,7 +59,6 @@ function create_filtered_interaction_graph(agt_pos::Vector{T}, ctx_pos::Vector{T
 
     # Process edge data
     if normalize_dist
-        # TODO: normalize edge data
         μ, σ = calculate_mean_and_std(dist, dims=2)       # dist: 2, num_edges
         dist = (dist .- μ) ./ (σ .+ 1e-6)
     end
@@ -68,7 +67,7 @@ function create_filtered_interaction_graph(agt_pos::Vector{T}, ctx_pos::Vector{T
     graph = GNNGraph(
         (all_src, all_dst),
         num_nodes = total_agts + total_ctxs,
-        edata = dist,
+        # edata = dist,
         dir = :in
     )
 
@@ -99,11 +98,10 @@ Parameters:
 - head_dim: Dimension of each attention head
 - num_heads: Number of attention heads
 """
-function InteractionGraphModel(n_in::Int, e_in::Int, out_dim::Int; num_heads::Int=2, norm="GN", ng=32)
+function InteractionGraphModel(n_in::Int, e_in::Int, out_dim::Int; num_heads::Int=2, norm="GN", ng=1)
     head_dim = div(out_dim, num_heads)
-    gat = GATConv((n_in, e_in)=>head_dim, heads=num_heads, add_self_loops=false)
-    # TODO: Config layer norm
-    # norm = GroupNorm(out_dim, gcd(ng, out_dim))      # LayerNorm
+    # gat = GATConv((n_in, e_in)=>out_dim, heads=num_heads, add_self_loops=false, concat=false, bias=false)
+    gat = GATv2Conv(n_in=>head_dim, heads=num_heads, add_self_loops=true, bias=true, concat=true)
     norm = norm == "GN" ? GroupNorm(out_dim, gcd(ng, out_dim)) : LayerNorm(out_dim)
     output = Dense(out_dim=>out_dim)
     agt_res = SkipConnection(
@@ -140,7 +138,7 @@ function (interaction::InteractionGraphModel)(data)
     num_ctx = size(ctx_features,2)
 
     g = create_filtered_interaction_graph(agt_pos, ctx_pos, dist_thrd)
-    @show num_agts, num_ctx
+    # @show num_agts, num_ctx
     @assert g.num_nodes == num_agts + num_ctx "Number of nodes is not correct"
 
     if g.num_edges == 0
@@ -152,7 +150,9 @@ function (interaction::InteractionGraphModel)(data)
 
     node_features = hcat(agt_features, ctx_features)
     res = node_features
-    x = interaction.gat(g, node_features, g.edata.e)
+    # Save the node_features using JLD2
+    # jldsave(joinpath(@__DIR__, "../node_features.jld2"), node_features=cpu(node_features), g=cpu(g))
+    x = interaction.gat(g, node_features)
     x = interaction.norm(x)
     x = relu(x)
     x = interaction.output(x)
