@@ -4,13 +4,14 @@ using Wandb, Logging, Dates
 using JLD2
 
 # Create a new named tuple with the same fields but with batched g_heteromaps
+# for batching after dataloader
 function batch_heteromaps(train_data_x)
     return (
         agt_features_upsampled = train_data_x.agt_features_upsampled,
-        agt_current_pos = train_data_x.agt_current_pos,
+        # agt_current_pos = train_data_x.agt_current_pos,
         polyline_graphs = train_data_x.polyline_graphs,
         g_heteromaps = Flux.batch(train_data_x.g_heteromaps),
-        llt_pos = train_data_x.llt_pos,
+        # llt_pos = train_data_x.llt_pos,
     )
 end
 
@@ -61,7 +62,12 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
     # Initial logging
     @info "Initial logging"
     x, y = train_data
-    pred = model(batch_heteromaps(x)...)
+
+    # Create interaction graphs
+    ga2m_all = create_filtered_interaction_graph(x.llt_pos, x.agt_current_pos, config["agent2map_dist_thrd"])
+    gm2a_all = create_filtered_interaction_graph(x.agt_current_pos, x.llt_pos, config["map2agent_dist_thrd"])
+    ga2a_all = create_filtered_interaction_graph(x.agt_current_pos, x.agt_current_pos, config["agent2agent_dist_thrd"])
+    pred = model(batch_heteromaps(x)..., ga2m_all, gm2a_all, ga2a_all)
     loss = loss_fn(pred, y)
     epoch = 0
     logging_callback(wblogger, "train", epoch, cpu(loss)..., log_step_increment=0)
@@ -70,12 +76,15 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
     @info "Start training"
     for epoch in 1:num_epochs
         @show epoch
-
-        # Training
         for (x, y) in train_loader
+            # Create interaction graphs after sampling
+            ga2m = create_filtered_interaction_graph(x.llt_pos, x.agt_current_pos, config["agent2map_dist_thrd"])
+            gm2a = create_filtered_interaction_graph(x.agt_current_pos, x.llt_pos, config["map2agent_dist_thrd"])
+            ga2a = create_filtered_interaction_graph(x.agt_current_pos, x.agt_current_pos, config["agent2agent_dist_thrd"])
+
             x_batch = batch_heteromaps(x)
             loss, grad = Flux.withgradient(model) do model
-                pred = model(x_batch...)
+                pred = model(x_batch..., ga2m, gm2a, ga2a)
                 loss_fn(pred, y)
             end
 
@@ -92,7 +101,7 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
         save_model_state(cpu(model), model_path)
     else
         @info "Plotting predictions"
-        pred = model(batch_heteromaps(x)...)
+        pred = model(batch_heteromaps(x)..., ga2m_all, gm2a_all, ga2a_all)
 
         VectorLanelet.plot_predictions(cpu(x.agt_features), cpu(y), cpu(pred),
             grid_layout=config["plot_grid"], scenario_indices=config["plot_scenario_indices"])
@@ -103,7 +112,7 @@ include("../src/config.jl")
 
 wblogger = WandbLogger(
     project = "VectorLanelet",
-    name = "demo-$(now())",
+    name = "demo-b$(config["batch_size"])-lr$(config["learning_rate"])",
     config = config
 )
 try
