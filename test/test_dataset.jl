@@ -1,6 +1,8 @@
 using VectorLanelet
 using Graphs
 using GraphNeuralNetworks
+using Flux
+include("../src/config.jl")
 
 lanelet_roadway, g_meta = VectorLanelet.load_map_data()
 polyline_graphs, g_heteromap, llt_pos, μ, σ = VectorLanelet.prepare_map_features(lanelet_roadway, g_meta)
@@ -26,3 +28,5 @@ for batch in dataloader
 end
 
 
+device = Flux.cpu
+data = VectorLanelet.prepare_data(config, device)

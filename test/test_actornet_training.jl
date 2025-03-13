@@ -83,26 +83,4 @@ end
 
 training(actornet_predictor, agent_features_upsampled, labels, overfit=false, valid_plot=true)
 
-# ------ Mapnet ------
-# TODO: Skip ActorNet
-# mapnet_predictor = Chain(
-#     # Normalize the agt features
-#     create_agt_preprocess_block(μ, σ),
-#     # Take the last timestep
-#     x -> x[end, :, :],
-#     # Use a single dense layer to replace actornet_predictor
-#     Dense(64, 2),
-#     x -> x .* σ .+ μ,
-
-#     MapNet(2, [16, 64], μ, σ),
-#     create_prediction_head(64, μ, σ),
-# )   |> gpu
-
-# struct MapNetPredictor
-#     agt_encoder::Chain
-#     map_encoder::Chain
-# end
-
-# Flux.@layer MapNetPredictor
-
 
