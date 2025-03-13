@@ -216,24 +216,25 @@ function prepare_data(config, device::Function)
 
     labels = config["predict_current_pos"] ? agt_features[:, 2, :] : agt_pos_end
 
-    agent_data = (; agt_features_upsampled)
+    agent_data = (; agt_features_upsampled, agt_features)
     map_data = (; polyline_graphs, g_heteromap, llt_pos, μ, σ)
     data = (; agent_data, map_data, labels)
     return data
 end
 
-
 """
-    Preprocess data for DataLoader
+    Preprocess data for LaneletFusionPred
 expect data to include:
-    - agent_data: (agt_features_upsampled)
+    - agent_data: (agt_features_upsampled, agt_features)
     - map_data: (polyline_graphs, g_heteromap, llt_pos)
     - labels: (2, timesteps, num_agents)
 """
 function preprocess_data(data; overfit::Bool=false, overfit_idx::Int=1)
     num_scenarios = length(data.agent_data.agt_features_upsampled)
     agent_data, map_data, labels = data
+
     agt_current_pos = [i[:,end,:] for i in agent_data.agt_features_upsampled]
+    # duplicate
     polyline_graphs = [map_data.polyline_graphs for _ in 1:num_scenarios]
     g_heteromaps = [map_data.g_heteromap for _ in 1:num_scenarios]
     llt_pos = [map_data.llt_pos for _ in 1:num_scenarios]
