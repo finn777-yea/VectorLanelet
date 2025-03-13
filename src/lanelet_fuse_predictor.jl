@@ -133,15 +133,13 @@ end
 - Output agts features, shape (channels, num_agts)
 """
 function (interaction::InteractionGraphModel)(data)
-    agt_features, agt_pos, ctx_features, ctx_pos, dist_thrd = data
+    agt_features, ctx_features, g = data
     num_agts = size(agt_features,2)
     num_ctx = size(ctx_features,2)
 
-    g = create_filtered_interaction_graph(agt_pos, ctx_pos, dist_thrd)
-    # @show num_agts, num_ctx
     @assert g.num_nodes == num_agts + num_ctx "Number of nodes is not correct"
 
-    if g.num_edges == 0
+    if g.num_edges == g.num_nodes       # only self-loops
         @info "No interaction"
         agt_features = interaction.agt_res(agt_features)
         agt_features = relu(agt_features)
@@ -226,9 +224,10 @@ Parameters:
 """
 
 # TODO: Use profile to check the efficiency of the forward function
-function (model::LaneletFusionPred)(agt_features::Vector{<:AbstractArray}, agt_pos::Vector{<:AbstractMatrix},
-    polyline_graphs::Vector{<:GNNGraph}, g_heteromaps, llt_pos::Vector{<:AbstractMatrix})
+function (model::LaneletFusionPred)(agt_features::Vector{<:AbstractArray},
+    polyline_graphs::Vector{<:GNNGraph}, g_heteromaps, ga2m, gm2a, ga2a)
 
+    batch_size = length(agt_features)
     # Concatenate agt features for batch processing
     agt_features = cat(agt_features..., dims=3)
 
@@ -237,15 +236,15 @@ function (model::LaneletFusionPred)(agt_features::Vector{<:AbstractArray}, agt_p
     # TODO: Consider how to process the polyline_graphs(vector of batched fully-connected graphs)
     emb_lanelets = model.ple(polyline_graphs[1], polyline_graphs[1].x)
     # Duplicate emb_map num_scenarios times
-    emb_lanelets = repeat(emb_lanelets,1,length(llt_pos))     # (channels, num_scenarios x num_llts)
+    emb_lanelets = repeat(emb_lanelets,1,batch_size)     # (channels, num_scenarios x num_llts)
     emb_map = model.mapenc(g_heteromaps, emb_lanelets)        # (channels, num_scenarios x num_llts)
 
-    emb_map = model.a2m((emb_map, llt_pos, emb_actor, agt_pos, model.dist_thrd.a2m))
+    emb_map = model.a2m((emb_map, emb_actor, ga2m))
     emb_map = model.m2m(g_heteromaps, emb_map)      # (channels, num_scenarios x num_llts)
 
     # Assign the updated emb_map to map2agent_graphs
-    emb_actor = model.m2a((emb_actor, agt_pos, emb_map, llt_pos, model.dist_thrd.m2a))      # (channels, num_scenarios x num_agents)
-    emb_actor = model.a2a((emb_actor, agt_pos, emb_actor, agt_pos, model.dist_thrd.a2a))
+    emb_actor = model.m2a((emb_actor, emb_map, gm2a))      # (channels, num_scenarios x num_agents)
+    emb_actor = model.a2a((emb_actor, emb_actor, ga2a))
 
     @assert size(emb_actor) == (64, size(agt_features, 3))
     predictions = model.pred_head(emb_actor)      # (2, num_scenarios x num_agents)
