@@ -51,7 +51,7 @@ export ActorNet_Simp,
        LaneletPredictor
 include("lanelet_predictor.jl")
 
-export create_filtered_interaction_graphs,
+export create_filtered_interaction_graph,
        InteractionGraphModel,
        LaneletFusionPred
 include("lanelet_fuse_predictor.jl")
