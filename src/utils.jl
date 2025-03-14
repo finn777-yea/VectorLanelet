@@ -51,6 +51,7 @@ function create_filtered_interaction_graph(agt_pos::Vector{T}, ctx_pos::Vector{T
     total_agts = agt_counts[end]
     total_ctxs = ctx_counts[end]
 
+    # scr for ctx nodes, while dst for agt nodes
     all_src = Int[]
     all_dst = Int[]
 
@@ -73,16 +74,15 @@ function create_filtered_interaction_graph(agt_pos::Vector{T}, ctx_pos::Vector{T
             agt_offset = agt_counts[i]
             ctx_offset = ctx_counts[i]
 
-            # Replace append! with non-mutating vcat
             # Note: use Vector as src and dst to construct GNNGraph is faster
-            all_src = vcat(all_src, agt_idc .+ agt_offset)
-            all_dst = vcat(all_dst, ctx_idc .+ total_agts .+ ctx_offset)
+            all_dst = vcat(all_dst, agt_idc .+ agt_offset)
+            all_src = vcat(all_src, ctx_idc .+ total_agts .+ ctx_offset)
         end
     end
     agt_pos = reduce(hcat, agt_pos)
     ctx_pos = reduce(hcat, ctx_pos)
     global_pos = hcat(agt_pos, ctx_pos)
-    dist = global_pos[:,all_src] - global_pos[:,all_dst]    # (2, num_edges)
+    dist = global_pos[:,all_dst] - global_pos[:,all_src]    # (2, num_edges)
 
     # Handle empty case
     # no connection in each scenario
@@ -101,7 +101,7 @@ function create_filtered_interaction_graph(agt_pos::Vector{T}, ctx_pos::Vector{T
         (all_src, all_dst),
         num_nodes = total_agts + total_ctxs,
         edata = store_edata ? dist : nothing,
-        dir = :in       # msg flow from dst to src
+        dir = :out
     )
     # Add self-loops with edge data 0
     if add_self_loops
