@@ -247,8 +247,8 @@ function preprocess_data(data; overfit::Bool=false, overfit_idx::Int=1)
         polyline_graphs=polyline_graphs[overfit_idx,:], g_heteromaps=g_heteromaps[overfit_idx,:], llt_pos=llt_pos[overfit_idx,:])
         training_y = labels[overfit_idx,:]
     else
-        training_x = (;agent_data.agt_features_upsampled, agt_current_pos,
-        polyline_graphs, g_heteromaps, llt_pos)
+        training_x = (;agent_data.agt_features_upsampled, agent_data.agt_features, agt_current_pos,
+            polyline_graphs, g_heteromaps, llt_pos)
         training_y = labels
     end
 
