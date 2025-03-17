@@ -38,8 +38,8 @@ Returns:
 function create_filtered_interaction_graph(agt_pos::Vector{T}, ctx_pos::Vector{T},
     distance_threshold::Real,
     normalize_dist::Bool=false,
-    store_edata::Bool=false,
-    add_self_loops::Bool=false
+    store_edata::Bool=true,
+    add_self_loops::Bool=true
     ) where T <: AbstractMatrix
 
     # Process each sample independently

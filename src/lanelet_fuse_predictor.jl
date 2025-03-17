@@ -24,8 +24,8 @@ Parameters:
 """
 function InteractionGraphModel(n_in::Int, e_in::Int, out_dim::Int; num_heads::Int=2, norm="GN", ng=1)
     head_dim = div(out_dim, num_heads)
-    # gat = GATConv((n_in, e_in)=>out_dim, heads=num_heads, add_self_loops=false, concat=false, bias=false)
-    gat = GATv2Conv(n_in=>head_dim, heads=num_heads, add_self_loops=true, bias=true, concat=true)
+    gat = GATConv((n_in, e_in)=>head_dim, heads=num_heads, add_self_loops=false, concat=true, bias=true)
+    # gat = GATv2Conv(n_in=>head_dim, heads=num_heads, add_self_loops=true, bias=true, concat=true)
     norm = norm == "GN" ? GroupNorm(out_dim, gcd(ng, out_dim)) : LayerNorm(out_dim)
     output = Dense(out_dim=>out_dim)
     agt_res = SkipConnection(
@@ -74,7 +74,7 @@ function (interaction::InteractionGraphModel)(data)
     res = node_features
     # Save the node_features using JLD2
     # jldsave(joinpath(@__DIR__, "../node_features.jld2"), node_features=cpu(node_features), g=cpu(g))
-    x = interaction.gat(g, node_features)
+    x = interaction.gat(g, node_features, g.edata.e)
     x = interaction.norm(x)
     x = relu(x)
     x = interaction.output(x)

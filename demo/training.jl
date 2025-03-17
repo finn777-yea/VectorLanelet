@@ -112,7 +112,7 @@ include("../src/config.jl")
 
 wblogger = WandbLogger(
     project = "VectorLanelet",
-    name = "demo-b$(config["batch_size"])-lr$(config["learning_rate"])",
+    name = "demo-b$(config["batch_size"])-lr$(config["learning_rate"])-epochs$(config["num_epochs"])",
     config = config
 )
 try
