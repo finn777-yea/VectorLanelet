@@ -62,7 +62,7 @@ function (interaction::InteractionGraphModel)(data)
     num_ctx = size(ctx_features,2)
 
     @assert g.num_nodes == num_agts + num_ctx "Number of nodes is not correct"
-
+    @show g.num_edges
     if g.num_edges == g.num_nodes       # only self-loops
         @info "No interaction"
         agt_features = interaction.agt_res(agt_features)
@@ -148,8 +148,8 @@ Parameters:
 """
 
 # TODO: Use profile to check the efficiency of the forward function
-function (model::LaneletFusionPred)(agt_features::Vector{<:AbstractArray},
-    polyline_graphs::Vector{<:GNNGraph}, g_heteromaps, ga2m, gm2a, ga2a)
+function (model::LaneletFusionPred)(agt_features::Union{Vector{<:AbstractArray}, SubArray{<:AbstractArray}},
+    polyline_graphs::Union{Vector{<:GNNGraph}, SubArray{<:GNNGraph}}, g_heteromaps, ga2m, gm2a, ga2a)
 
     batch_size = length(agt_features)
     # Concatenate agt features for batch processing

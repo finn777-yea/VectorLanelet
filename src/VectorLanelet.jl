@@ -40,7 +40,8 @@ export load_map_data,
        agent_features_upsample
 include("dataset_processing.jl")
 
-export extract_gml_src_dst
+export create_filtered_interaction_graph,
+       create_interaction_graphs
 include("utils.jl")
 
 include("validation_plot.jl")
@@ -51,8 +52,7 @@ export ActorNet_Simp,
        LaneletPredictor
 include("lanelet_predictor.jl")
 
-export create_filtered_interaction_graph,
-       InteractionGraphModel,
+export InteractionGraphModel,
        LaneletFusionPred
 include("lanelet_fuse_predictor.jl")
 

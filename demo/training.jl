@@ -1,5 +1,6 @@
 using VectorLanelet
 using Flux
+using MLUtils: splitobs
 using Wandb, Logging, Dates
 using JLD2
 
@@ -50,7 +51,8 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
     end
 
     # DataLoader
-    train_data = VectorLanelet.preprocess_data(data, overfit=config["overfit"], overfit_idx=config["overfit_idx"])
+    X, Y = VectorLanelet.preprocess_data(data, overfit=config["overfit"], overfit_idx=config["overfit_idx"])
+    train_data, val_data = splitobs((X, Y), at=config["train_fraction"])
     batch_size = config["overfit"] ? 1 : config["batch_size"]
 
     train_loader = Flux.DataLoader(
@@ -61,16 +63,19 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
 
     # Initial logging
     @info "Initial logging"
-    x, y = train_data
+    for (type, data) in ("train" => train_data, "val" => val_data)
+        let (x, y) = data
 
-    # Create interaction graphs
-    ga2m_all = create_filtered_interaction_graph(x.llt_pos, x.agt_current_pos, config["agent2map_dist_thrd"])
-    gm2a_all = create_filtered_interaction_graph(x.agt_current_pos, x.llt_pos, config["map2agent_dist_thrd"])
-    ga2a_all = create_filtered_interaction_graph(x.agt_current_pos, x.agt_current_pos, config["agent2agent_dist_thrd"])
-    pred = model(batch_heteromaps(x)..., ga2m_all, gm2a_all, ga2a_all)
-    loss = loss_fn(pred, y)
-    epoch = 0
-    logging_callback(wblogger, "train", epoch, cpu(loss)..., log_step_increment=0)
+            # Create interaction graphs
+            ga2m_all, gm2a_all, ga2a_all = create_interaction_graphs(x.agt_current_pos, x.llt_pos,
+                config["agent2map_dist_thrd"], config["map2agent_dist_thrd"], config["agent2agent_dist_thrd"])
+            pred = model(batch_heteromaps(x)..., ga2m_all, gm2a_all, ga2a_all)
+            loss = loss_fn(pred, y)
+
+            epoch = 0
+            logging_callback(wblogger, type, epoch, cpu(loss)..., log_step_increment=0)
+        end
+    end
 
     # Training loop
     @info "Start training"
@@ -78,19 +83,28 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
         @show epoch
         for (x, y) in train_loader
             # Create interaction graphs after sampling
-            ga2m = create_filtered_interaction_graph(x.llt_pos, x.agt_current_pos, config["agent2map_dist_thrd"])
-            gm2a = create_filtered_interaction_graph(x.agt_current_pos, x.llt_pos, config["map2agent_dist_thrd"])
-            ga2a = create_filtered_interaction_graph(x.agt_current_pos, x.agt_current_pos, config["agent2agent_dist_thrd"])
-
-            x_batch = batch_heteromaps(x)
+            ga2m, gm2a, ga2a = create_interaction_graphs(x.agt_current_pos, x.llt_pos,
+                config["agent2map_dist_thrd"], config["map2agent_dist_thrd"], config["agent2agent_dist_thrd"])
+            x = batch_heteromaps(x)
             loss, grad = Flux.withgradient(model) do model
-                pred = model(x_batch..., ga2m, gm2a, ga2a)
+                pred = model(x..., ga2m, gm2a, ga2a)
                 loss_fn(pred, y)
             end
 
             Flux.update!(opt, model, grad[1])
             logging_callback(wblogger, "train", epoch, cpu(loss)..., log_step_increment=length(y))  # log_step_increment = batch size
         end
+
+        # Validation
+        let (x, y) = val_data
+            inter_graphs = create_interaction_graphs(x.agt_current_pos, x.llt_pos,
+                config["agent2map_dist_thrd"], config["map2agent_dist_thrd"], config["agent2agent_dist_thrd"])
+            values = loss_fn(model(batch_heteromaps(x)..., inter_graphs...), y)
+
+            # logging
+            logging_callback(wblogger, "val", epoch, cpu(values)..., log_step_increment=0)
+        end
+
     end
 
     if config["save_model"]
