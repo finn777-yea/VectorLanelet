@@ -101,7 +101,7 @@ end
 Flux.@layer LaneletFusionPred
 
 function LaneletFusionPred(config::Dict{String, Any}, μ, σ)
-    actornet = ActorNet_Simp(config["actornet_in_channels"], config["group_out_channels"], μ, σ;
+    actornet = ActorNet(config["actornet_in_channels"], config["group_out_channels"], μ, σ;
         kernel_size=config["actornet_kernel_size"], norm=config["actornet_norm"], ng=config["actornet_ng"]
     )
 

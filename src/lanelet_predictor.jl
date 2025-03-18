@@ -4,7 +4,7 @@ Complete model architecture combining all components
 
 # ---- LaneletPredictor ----
 struct LaneletPredictor
-    actornet::ActorNet_Simp
+    actornet::ActorNet
     ple::PolylineEncoder
     mapenc::MapEncoder
     transformer::Transformer
@@ -19,7 +19,7 @@ Flux.@layer LaneletPredictor
     map_features: (4, num_vectors)
 """
 function LaneletPredictor(config::Dict{String, Any}, μ, σ)
-    actornet = ActorNet_Simp(config["actornet_in_channels"], config["group_out_channels"], μ, σ)
+    actornet = ActorNet(config["actornet_in_channels"], config["group_out_channels"], μ, σ)
     ple = PolylineEncoder(config["ple_in_channels"], config["ple_out_channels"], μ, σ, config["ple_num_layers"], config["ple_hidden_unit"])
     mapenc = MapEncoder(config["mapenc_hidden_unit"], config["mapenc_hidden_unit"], config["mapenc_num_layers"])
 

@@ -1,14 +1,22 @@
 # ---- ActorNet_Simp ----
-struct ActorNet_Simp
+"""
+Agent trajectory encoder
+
+ActorNet(in_channels, group_out_channels::Vector{Int}, μ::Union{Vector, CuArray}, σ::Union{Vector, CuArray};
+    kernel_size::Int=3, norm::String="GN", ng::Int=32)
+
+NOTE: only works with timesteps that can be divided by 4, due to stride=2 in some layers
+"""
+struct ActorNet
     agt_preprocess::Chain
     groups::Chain
     lateral::Chain
     output_block::Chain
 end
 
-Flux.@layer ActorNet_Simp
+Flux.@layer ActorNet
 
-function ActorNet_Simp(in_channels, group_out_channels::Vector{Int}, μ::Union{Vector, CuArray}, σ::Union{Vector, CuArray};
+function ActorNet(in_channels, group_out_channels::Vector{Int}, μ::Union{Vector, CuArray}, σ::Union{Vector, CuArray};
     kernel_size::Int=3, norm::String="GN", ng::Int=32)
     agt_preprocess = create_agt_preprocess_block(μ, σ)
     out_channels = group_out_channels[end]
@@ -34,10 +42,10 @@ function ActorNet_Simp(in_channels, group_out_channels::Vector{Int}, μ::Union{V
 
     output_block = create_residual_block(out_channels, out_channels, kernel_size=kernel_size, stride=1, ng=ng)
 
-    ActorNet_Simp(agt_preprocess, groups, lateral, output_block)
+    ActorNet(agt_preprocess, groups, lateral, output_block)
 end
 
-function (actornet::ActorNet_Simp)(agt_features)
+function (actornet::ActorNet)(agt_features)
     agt_features = actornet.agt_preprocess(agt_features)
     outputs = Flux.activations(actornet.groups, agt_features)
 
