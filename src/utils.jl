@@ -35,12 +35,13 @@ Parameters:
 Returns:
 - g: GNNGraph for each sample in the batch
 """
-function create_filtered_interaction_graph(agt_pos::Vector{T}, ctx_pos::Vector{T},
+function create_filtered_interaction_graph(agt_pos::Union{Vector{<:AbstractArray}, SubArray{<:AbstractArray}},
+    ctx_pos::Union{Vector{<:AbstractArray}, SubArray{<:AbstractArray}},
     distance_threshold::Real,
     normalize_dist::Bool=false,
     store_edata::Bool=true,
     add_self_loops::Bool=true
-    ) where T <: AbstractMatrix
+    )
 
     # Process each sample independently
     @assert length(agt_pos) == length(ctx_pos) "Number of samples must match"
@@ -87,28 +88,50 @@ function create_filtered_interaction_graph(agt_pos::Vector{T}, ctx_pos::Vector{T
     # Handle empty case
     # no connection in each scenario
     if isempty(all_src)
-        return GNNGraph(total_agts + total_ctxs, dir=:in)
+        graph = GNNGraph(total_agts + total_ctxs, dir=:in)
+        if add_self_loops
+            self_loop_nodes = [1:graph.num_nodes;]
+            # TODO: hard-coded the edge data being 2 dim
+            # TODO: resolve edata cat_feature error of non-edge graphs
+            graph = add_edges(graph, self_loop_nodes, self_loop_nodes)
+            graph.edata.e = zeros(Float32, 2, length(self_loop_nodes))
+        end
+    else
+        # Process edge data
+        if normalize_dist
+            μ, σ = calculate_mean_and_std(dist, dims=2)       # dist: 2, num_edges
+            dist = (dist .- μ) ./ (σ .+ 1e-6)
+        end
+
+        # Create single graph with all samples
+        graph = GNNGraph(
+            (all_src, all_dst),
+            num_nodes = total_agts + total_ctxs,
+            edata = store_edata ? dist : nothing,
+            dir = :out
+        )
+        # Add self-loops with edge data 0
+        if add_self_loops
+            self_loop_nodes = [1:graph.num_nodes;]
+            # TODO: hard-coded the edge data being 2 dim
+            graph = add_edges(graph, self_loop_nodes, self_loop_nodes, edata=zeros(Float32, 2, length(self_loop_nodes)))
+        end
     end
 
-    # Process edge data
-    if normalize_dist
-        μ, σ = calculate_mean_and_std(dist, dims=2)       # dist: 2, num_edges
-        dist = (dist .- μ) ./ (σ .+ 1e-6)
-    end
-
-    # Create single graph with all samples
-    graph = GNNGraph(
-        (all_src, all_dst),
-        num_nodes = total_agts + total_ctxs,
-        edata = store_edata ? dist : nothing,
-        dir = :out
-    )
-    # Add self-loops with edge data 0
-    if add_self_loops
-        self_loop_nodes = [1:graph.num_nodes;]
-        graph = add_edges(graph, self_loop_nodes, self_loop_nodes, edata=zeros(Float32, size(dist, 1), length(self_loop_nodes)))
-    end
 
     return graph
 end
 
+function create_interaction_graphs(agent_pos, llt_pos,
+    a2m_dist_thrd::Real,
+    m2a_dist_thrd::Real,
+    a2a_dist_thrd::Real,
+    )
+
+    # Create interaction graphs
+    ga2m_all = create_filtered_interaction_graph(llt_pos, agent_pos, a2m_dist_thrd)
+    gm2a_all = create_filtered_interaction_graph(agent_pos, llt_pos, m2a_dist_thrd)
+    ga2a_all = create_filtered_interaction_graph(agent_pos, agent_pos, a2a_dist_thrd)
+
+    return ga2m_all, gm2a_all, ga2a_all
+end
