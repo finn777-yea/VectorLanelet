@@ -16,6 +16,13 @@ function batch_heteromaps(train_data_x)
     )
 end
 
+function cpu_view(x::SubArray)
+    # Get the parent array and indices
+    parent_array = cpu(parent(x))
+    # Recreate the view with the same indices but on the CPU array
+    return view(parent_array, parentindices(x)...)
+end
+
 function setup_model(config::Dict{String, Any}, μ, σ)
     if config["model_name"] == "LaneletFusionPred"
         model = LaneletFusionPred(config, μ, σ)
@@ -115,10 +122,21 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
         save_model_state(cpu(model), model_path)
     else
         @info "Plotting predictions"
-        pred = model(batch_heteromaps(x)..., ga2m_all, gm2a_all, ga2a_all)
-
-        VectorLanelet.plot_predictions(cpu(x.agt_features), cpu(y), cpu(pred),
-            grid_layout=config["plot_grid"], scenario_indices=config["plot_scenario_indices"])
+        # let (x, y) = train_data
+        #     ga2m_all, gm2a_all, ga2a_all = create_interaction_graphs(x.agt_current_pos, x.llt_pos,
+        #         config["agent2map_dist_thrd"], config["map2agent_dist_thrd"], config["agent2agent_dist_thrd"])
+        #     pred = model(batch_heteromaps(x)..., ga2m_all, gm2a_all, ga2a_all)
+        #     # Use cpu_view to move views of CuArray to cpu
+        #     VectorLanelet.plot_predictions(cpu_view(x.agt_features), cpu_view(y), cpu(pred),
+        #         grid_layout=config["plot_grid"], scenario_indices=config["plot_scenario_indices"])
+        # end
+        let (x, y) = val_data
+            inter_graphs = create_interaction_graphs(x.agt_current_pos, x.llt_pos,
+                config["agent2map_dist_thrd"], config["map2agent_dist_thrd"], config["agent2agent_dist_thrd"])
+            pred = model(batch_heteromaps(x)..., inter_graphs...)
+            VectorLanelet.plot_predictions(cpu_view(x.agt_features), cpu_view(y), cpu(pred),
+                grid_layout=config["plot_grid"], scenario_indices=nothing)
+        end
     end
 end
 
