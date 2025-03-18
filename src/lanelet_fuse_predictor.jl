@@ -87,7 +87,7 @@ end
 
 # ------ LaneletFusionPred -------
 struct LaneletFusionPred
-    actornet::ActorNet_Simp
+    actornet::ActorNet
     ple::PolylineEncoder
     mapenc::MapEncoder
     a2m::Chain
