@@ -24,7 +24,7 @@ Parameters:
 """
 function InteractionGraphModel(n_in::Int, e_in::Int, out_dim::Int; num_heads::Int=2, norm="GN", ng=1)
     head_dim = div(out_dim, num_heads)
-    gat = GATConv((n_in, e_in)=>head_dim, heads=num_heads, add_self_loops=false, concat=true, bias=true)
+    gat = GATv2Conv((n_in, e_in)=>head_dim, heads=num_heads, add_self_loops=false, concat=true, bias=true)
     # gat = GATv2Conv(n_in=>head_dim, heads=num_heads, add_self_loops=true, bias=true, concat=true)
     norm = norm == "GN" ? GroupNorm(out_dim, gcd(ng, out_dim)) : LayerNorm(out_dim)
     output = Dense(out_dim=>out_dim)
@@ -62,7 +62,7 @@ function (interaction::InteractionGraphModel)(data)
     num_ctx = size(ctx_features,2)
 
     @assert g.num_nodes == num_agts + num_ctx "Number of nodes is not correct"
-    @show g.num_edges
+
     if g.num_edges == g.num_nodes       # only self-loops
         @info "No interaction"
         agt_features = interaction.agt_res(agt_features)
