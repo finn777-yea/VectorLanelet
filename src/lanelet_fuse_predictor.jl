@@ -172,3 +172,22 @@ function (model::LaneletFusionPred)(agt_features::Union{Vector{<:AbstractArray},
     predictions = model.pred_head(emb_actor)      # (2, num_scenarios x num_agents)
     return predictions
 end
+
+function collate_data(::LaneletFusionPred, train_data_x, config::Dict{String, Any})
+    ga2m, gm2a, ga2a = create_interaction_graphs(
+        train_data_x.agt_current_pos,
+        train_data_x.llt_pos,
+    config["agent2map_dist_thrd"],
+    config["map2agent_dist_thrd"],
+    config["agent2agent_dist_thrd"]
+)
+
+return(
+    train_data_x.agt_features_upsampled,
+    train_data_x.polyline_graphs,
+    Flux.batch(train_data_x.g_heteromaps),
+    ga2m,
+    gm2a,
+    ga2a
+)
+end

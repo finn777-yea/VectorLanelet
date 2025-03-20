@@ -4,18 +4,7 @@ using MLUtils: splitobs
 using Wandb, Logging, Dates
 using JLD2
 
-# Create a new named tuple with the same fields but with batched g_heteromaps
-# for batching after dataloader
-function batch_heteromaps(train_data_x)
-    return (
-        agt_features_upsampled = train_data_x.agt_features_upsampled,
-        # agt_current_pos = train_data_x.agt_current_pos,
-        polyline_graphs = train_data_x.polyline_graphs,
-        g_heteromaps = Flux.batch(train_data_x.g_heteromaps),
-        # llt_pos = train_data_x.llt_pos,
-    )
-end
-
+# Used for validation plotting
 function cpu_view(x::SubArray)
     # Get the parent array and indices
     parent_array = cpu(parent(x))
@@ -26,6 +15,8 @@ end
 function setup_model(config::Dict{String, Any}, μ, σ)
     if config["model_name"] == "LaneletFusionPred"
         model = LaneletFusionPred(config, μ, σ)
+    elseif config["model_name"] == "LaneletStaticFusionPred"
+        model = LaneletStaticFusionPred(config, μ, σ)
     elseif config["model_name"] == "LaneletPredictor"
         model = LaneletPredictor(config, μ, σ)
     else
@@ -74,9 +65,8 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
         let (x, y) = data
 
             # Create interaction graphs
-            ga2m_all, gm2a_all, ga2a_all = create_interaction_graphs(x.agt_current_pos, x.llt_pos,
-                config["agent2map_dist_thrd"], config["map2agent_dist_thrd"], config["agent2agent_dist_thrd"])
-            pred = model(batch_heteromaps(x)..., ga2m_all, gm2a_all, ga2a_all)
+            x = VectorLanelet.collate_data(model, x, config)
+            pred = model(x...)
             loss = loss_fn(pred, y)
 
             epoch = 0
@@ -90,11 +80,9 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
         @show epoch
         for (x, y) in train_loader
             # Create interaction graphs after sampling
-            ga2m, gm2a, ga2a = create_interaction_graphs(x.agt_current_pos, x.llt_pos,
-                config["agent2map_dist_thrd"], config["map2agent_dist_thrd"], config["agent2agent_dist_thrd"])
-            x = batch_heteromaps(x)
+            x = VectorLanelet.collate_data(model, x, config)
             loss, grad = Flux.withgradient(model) do model
-                pred = model(x..., ga2m, gm2a, ga2a)
+                pred = model(x...)
                 loss_fn(pred, y)
             end
 
@@ -104,9 +92,8 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
 
         # Validation
         let (x, y) = val_data
-            inter_graphs = create_interaction_graphs(x.agt_current_pos, x.llt_pos,
-                config["agent2map_dist_thrd"], config["map2agent_dist_thrd"], config["agent2agent_dist_thrd"])
-            values = loss_fn(model(batch_heteromaps(x)..., inter_graphs...), y)
+            x = VectorLanelet.collate_data(model, x, config)
+            values = loss_fn(model(x...), y)
 
             # logging
             logging_callback(wblogger, "val", epoch, cpu(values)..., log_step_increment=0)
@@ -131,10 +118,10 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
         #         grid_layout=config["plot_grid"], scenario_indices=config["plot_scenario_indices"])
         # end
         let (x, y) = val_data
-            inter_graphs = create_interaction_graphs(x.agt_current_pos, x.llt_pos,
-                config["agent2map_dist_thrd"], config["map2agent_dist_thrd"], config["agent2agent_dist_thrd"])
-            pred = model(batch_heteromaps(x)..., inter_graphs...)
-            VectorLanelet.plot_predictions(cpu_view(x.agt_features), cpu_view(y), cpu(pred),
+            x = VectorLanelet.collate_data(model, x, config)
+            pred = model(x...)
+            # TODO: x[1] is agt_features_upsampled, which leads to poor validation result
+            VectorLanelet.plot_predictions(cpu_view(x[1]), cpu_view(y), cpu(pred),
                 grid_layout=config["plot_grid"], scenario_indices=nothing)
         end
     end
