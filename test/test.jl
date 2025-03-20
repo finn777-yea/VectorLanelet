@@ -7,26 +7,25 @@ using Flux
 config = Dict{String, Any}()
 config["n_actor"] = 128         # the output feature dim each actor
 config["n_map"] = 128           # the output feature dim each lane
-config["num_scales"] = 6
-config["din_actor"] = 2
 
-@testset "create_residual_block" begin
-    res_block = create_residual_block(3, 32, kernel_size=3, stride=1)
-    @test res_block(rand(Float32, 10, 3, 4)) |> size == (10,32,4)
+@testset "layers" begin
+    @testset "create_residual_block" begin
+        res_block = create_residual_block(3, 32, kernel_size=3, stride=1)
+        @test res_block(rand(Float32, 10, 3, 4)) |> size == (10,32,4)
 
-    res_block = create_residual_block(3, 32, kernel_size=3, stride=2)
-    @test res_block(rand(Float32, 10, 3, 4)) |> size == (5,32,4)
-end
-@testset "create_group_block" begin
-    group_block1 = create_group_block(1, 3, 32)
-    @test group_block1(rand(Float32, 10, 3, 4)) |> size == (10,32,4)
-    group_block2 = create_group_block(2, 32, 64)
-    @test group_block2(rand(Float32, 10, 32, 4)) |> size == (5,64,4)
-end
-
-@testset "create_node_encoder" begin
-    node_encoder = create_node_encoder(3, 32)
-    @test node_encoder(rand(Float32, 3, 10)) |> size == (32,10)
+        res_block = create_residual_block(3, 32, kernel_size=3, stride=2)
+        @test res_block(rand(Float32, 10, 3, 4)) |> size == (5,32,4)
+    end
+    @testset "create_group_block" begin
+        group_block1 = create_group_block(1, 3, 32)
+        @test group_block1(rand(Float32, 10, 3, 4)) |> size == (10,32,4)
+        group_block2 = create_group_block(2, 32, 64)
+        @test group_block2(rand(Float32, 10, 32, 4)) |> size == (5,64,4)
+    end
+    @testset "create_node_encoder" begin
+        node_encoder = create_node_encoder(3, 32)
+        @test node_encoder(rand(Float32, 3, 10)) |> size == (32,10)
+    end
 end
 
 @testset "PolylineEncoder" begin
@@ -46,38 +45,60 @@ end
     @test pline(g, g.ndata.x) |> size == (output_channel, 10)
 end
 
-@testset "ActorNet_Simp" begin
-    agt_features = rand(Float32, 2, 10, 32)
+@testset "ActorNet" begin
+    agt_features = rand(Float32, 2, 20, 32)
     μ = rand(Float32, 2)
     σ = rand(Float32, 2)
-    actornet = VectorLanelet.ActorNet_Simp(2, [64, 128], μ, σ)
+    group_out_channels = [32,64,128]
+    actornet = VectorLanelet.ActorNet_Simp(2, group_out_channels, μ, σ)
 
     # Normalization and reshaping
-    @test actornet.agt_preprocess(agt_features) |> size == (10, 2, 32)
+    @test actornet.agt_preprocess(agt_features) |> size == (20, 2, 32)
+    @testset "group blocks" begin
+        # Group 1 doesn't change timesteps
+        @test actornet.groups[1](actornet.agt_preprocess(agt_features)) |> size == (20, 32, 32)
 
-    # Group 1 doesn't change timesteps
-    @test actornet.groups[1](actornet.agt_preprocess(agt_features)) |> size == (10, 64, 32)
-
-    # Group 2 reduces timesteps by half
-    @test actornet.groups[2](
-        actornet.groups[1](
-            actornet.agt_preprocess(agt_features)
-        )
-    ) |> size == (5, 128, 32)
-
-    @test actornet.lateral[1](
-        actornet.groups[1](
-            actornet.agt_preprocess(agt_features)
-        )
-    ) |> size == (10, 128, 32)
-
-    @test actornet.lateral[2](
-        actornet.groups[2](
+        # Group 2 reduces timesteps by half
+        @test actornet.groups[2](
             actornet.groups[1](
                 actornet.agt_preprocess(agt_features)
             )
-        )
-    ) |> size == (5, 128, 32)
+        ) |> size == (10, 64, 32)
+
+        # Group 3 reduces timesteps by half
+        @test actornet.groups[3](
+            actornet.groups[2](
+                actornet.groups[1](
+                    actornet.agt_preprocess(agt_features)
+                )
+            )
+        ) |> size == (5, 128, 32)
+    end     # group blocks
+
+    @testset "lateral connections" begin
+        @test actornet.lateral[1](
+            actornet.groups[1](
+                actornet.agt_preprocess(agt_features)
+            )
+        ) |> size == (20, 128, 32)
+
+        @test actornet.lateral[2](
+            actornet.groups[2](
+                actornet.groups[1](
+                    actornet.agt_preprocess(agt_features)
+                )
+            )
+        ) |> size == (10, 128, 32)
+
+        @test actornet.lateral[3](
+            actornet.groups[3](
+                actornet.groups[2](
+                    actornet.groups[1](actornet.agt_preprocess(agt_features))
+                )
+            )
+        ) |> size == (5, 128, 32)
+    end     # lateral connection
+
     @test actornet(agt_features) |> size == (128, 32)
 end
 
