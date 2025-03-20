@@ -85,6 +85,7 @@ function PolylineEncoder(
     num_layers::Int=3,
     norm::String="LN"
 )
+    out_channels = hidden_unit
     vec_preprocess = VectorLanelet.create_map_preprocess_block(μ, σ)
     layers = []
     for _ in 1:num_layers
