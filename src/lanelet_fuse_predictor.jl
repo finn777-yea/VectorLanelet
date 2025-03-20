@@ -95,7 +95,6 @@ struct LaneletFusionPred
     m2a::Chain
     a2a::Chain
     pred_head
-    dist_thrd
 end
 
 Flux.@layer LaneletFusionPred
@@ -131,8 +130,7 @@ function LaneletFusionPred(config::Dict{String, Any}, μ, σ)
     # Prediction head
     pred_head = create_prediction_head(config["fusion_out_dim"], μ, σ)
 
-    dist_thrd = (;a2m = config["agent2map_dist_thrd"], m2a = config["map2agent_dist_thrd"], a2a = config["agent2agent_dist_thrd"])
-    LaneletFusionPred(actornet, ple, mapenc, a2m, m2m, m2a, a2a, pred_head, dist_thrd)
+    LaneletFusionPred(actornet, ple, mapenc, a2m, m2m, m2a, a2a, pred_head)
 end
 
 """
