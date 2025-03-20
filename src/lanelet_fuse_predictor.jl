@@ -172,36 +172,3 @@ function (model::LaneletFusionPred)(agt_features::Union{Vector{<:AbstractArray},
     predictions = model.pred_head(emb_actor)      # (2, num_scenarios x num_agents)
     return predictions
 end
-
-"""
-    Preprocess data for LaneletFusionPred
-expect data to include:
-    - agent_data: (agt_features_upsampled, agt_features)
-    - map_data: (polyline_graphs, g_heteromap, llt_pos)
-    - labels: (2, timesteps, num_agents)
-"""
-function preprocess_data(::LaneletFusionPred, data; overfit::Bool=false, overfit_idx::Int=1)
-    num_scenarios = length(data.agent_data.agt_features_upsampled)
-    agent_data, map_data, labels = data
-
-    agt_current_pos = [i[:,end,:] for i in agent_data.agt_features_upsampled]
-    # duplicate
-    polyline_graphs = [map_data.polyline_graphs for _ in 1:num_scenarios]
-    g_heteromaps = [map_data.g_heteromap for _ in 1:num_scenarios]
-    llt_pos = [map_data.llt_pos for _ in 1:num_scenarios]
-
-
-    if overfit
-        @info "Performing overfitting"
-        training_x = (;agt_features_upsampled=agent_data.agt_features_upsampled[overfit_idx,:],
-        agt_current_pos=agt_current_pos[overfit_idx,:],
-        polyline_graphs=polyline_graphs[overfit_idx,:], g_heteromaps=g_heteromaps[overfit_idx,:], llt_pos=llt_pos[overfit_idx,:])
-        training_y = labels[overfit_idx,:]
-    else
-        training_x = (;agent_data.agt_features_upsampled, agent_data.agt_features, agt_current_pos,
-            polyline_graphs, g_heteromaps, llt_pos)
-        training_y = labels
-    end
-
-    return training_x, training_y
-end
