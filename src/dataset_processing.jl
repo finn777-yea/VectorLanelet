@@ -175,7 +175,7 @@ function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false
         (:lanelet, :suc, :lanelet) => extract_gml_src_dst(g_meta, "Successor"),
         (:lanelet, :adj_left, :lanelet) => extract_gml_src_dst(g_meta, "AdjacentLeft"),
         (:lanelet, :adj_right, :lanelet) => extract_gml_src_dst(g_meta, "AdjacentRight"),
-        dir = :in
+        dir = :out
     )
 
     if save_features
@@ -197,9 +197,9 @@ function calculate_llt_midpoint(centerline)
     return [mid_point.pos.x, mid_point.pos.y]
 end
 
-function agent_features_upsample(agt_features)
+function agent_features_upsample(agt_features, upsample_size::Int=20)
     agt_features = permutedims(agt_features, (2, 1, 3))
-    agt_features = upsample_linear(agt_features, size=10)
+    agt_features = upsample_linear(agt_features, size=upsample_size)
     agt_features = permutedims(agt_features, (2, 1, 3))
     return agt_features
 end
