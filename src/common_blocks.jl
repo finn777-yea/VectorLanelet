@@ -63,7 +63,7 @@ end
 # ---- PolylineEncoder ----
 """
     PolylineEncoder
-    Takes a batch of graphs and node features as input_features
+    Takes a batch of fully connected graphs and node features as input_features
     NodeEncoder -> MaxPooling -> Duplication -> Concatenate -> OutputLayer -> MaxPooling
 
     - g: Fully connected graph, representing a lanelet, with nodes as vectors of centerline
@@ -77,8 +77,14 @@ end
 
 Flux.@layer PolylineEncoder
 
-function PolylineEncoder(in_channels, out_channels, μ::Union{Vector, CuArray}, σ::Union{Vector, CuArray};
-    num_layers::Int=3, hidden_unit::Int=64, norm::String="LN")
+function PolylineEncoder(
+    in_channels,
+    hidden_unit,
+    μ::Union{Vector, CuArray},
+    σ::Union{Vector, CuArray};
+    num_layers::Int=3,
+    norm::String="LN"
+)
     vec_preprocess = VectorLanelet.create_map_preprocess_block(μ, σ)
     layers = []
     for _ in 1:num_layers
@@ -86,7 +92,7 @@ function PolylineEncoder(in_channels, out_channels, μ::Union{Vector, CuArray}, 
         in_channels = hidden_unit * 2
     end
     layers = Chain(layers...)
-    output_layer = Dense(hidden_unit * 2, out_channels)
+    output_layer = Dense(hidden_unit * 2, out_channels)     # multiply by 2 due to concatenation
     PolylineEncoder(vec_preprocess, layers, output_layer)
 end
 

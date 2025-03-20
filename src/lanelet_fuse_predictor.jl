@@ -104,11 +104,11 @@ function LaneletFusionPred(config::Dict{String, Any}, μ, σ)
         kernel_size=config["actornet_kernel_size"], norm=config["actornet_norm"], ng=config["actornet_ng"]
     )
 
-    ple = PolylineEncoder(config["ple_in_channels"], config["ple_out_channels"], μ, σ;
-        num_layers=config["ple_num_layers"], hidden_unit=config["ple_hidden_unit"], norm=config["ple_norm"]
+    ple = PolylineEncoder(config["ple_in_channels"], config["ple_hidden_channels"], μ, σ;
+        num_layers=config["ple_num_layers"], norm=config["ple_norm"]
     )
 
-    mapenc = MapEncoder(config["mapenc_hidden_unit"], config["mapenc_hidden_unit"], config["mapenc_num_layers"])
+    mapenc = MapEncoder(config["mapenc_hidden_channels"], config["mapenc_hidden_channels"], config["mapenc_num_layers"])
 
     # Fusion setup
     a2m_layers = InteractionGraphModel[]

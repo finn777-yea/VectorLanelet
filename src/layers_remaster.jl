@@ -50,7 +50,9 @@ end
 
 """
     Encoder for the node features at vector level
-    Contains 2 dense layers and batch/layer normalization
+    - in_channels: input channels of the node features
+    - out_channels: output channels of the node features
+    - norm: normalization method
 """
 function create_node_encoder(in_channels, out_channels, norm="LN")
     norm_layer = norm == "LN" ? LayerNorm : BatchNorm
