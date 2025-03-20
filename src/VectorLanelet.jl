@@ -56,6 +56,9 @@ export InteractionGraphModel,
        LaneletFusionPred
 include("lanelet_fuse_predictor.jl")
 
+export LaneletStaticFusionPred
+include("lanelet_static_fuse_predictor.jl")
+
 export logging_callback,
        save_model_state
 include("training_utils.jl")
