@@ -1,32 +1,30 @@
-using VectorLanelet
-using Graphs
-using GraphNeuralNetworks
-using Flux
-include("../src/config.jl")
+using DroneDatasetAdapter
+using JLD2
+using Test
 
-lanelet_roadway, g_meta = VectorLanelet.load_map_data()
-polyline_graphs, g_heteromap, llt_pos, μ, σ = VectorLanelet.prepare_map_features(lanelet_roadway, g_meta)
-size(llt_pos, 2) == g_heteromap.num_nodes[:lanelet]
+dataset_path = joinpath(homedir(), "Documents", "exiD-dataset-v2.1")
+recording_ids = [0,1,2,3,4,5]
+data_infos = ExiDRecordings(recording_ids, dataset_path)
+dataset = read(data_infos)
+data_path = joinpath(@__DIR__,"..", "res", "prediction_dataset_size200.jld2")
 
-# Test the node order in polyline_graphs and g_heteromap
-polyline_graphs.gdata.id
+# The data is processed in file demo/load_recordings.jl
+data = load(data_path)
+X = data["X"]
+Y = data["Y"]
 
-edge_index(g_heteromap, (:lanelet, :right, :lanelet))
-
-# Test clustered agt features
-agt_features, agt_pos_end = VectorLanelet.prepare_agent_features(lanelet_roadway)
-agt_pos_end[1]
-length(agt_features)
-cat(agt_features..., dims=3)
-
-using MLUtils
-dataloader = DataLoader(agt_features, batchsize=5, shuffle=true)
-
-for batch in dataloader
-    @show size(batch)
-    @show size(batch[1])
+@testset "Test loaded drone dataset" begin
+    for i in 1:10
+        df = filter(
+        row -> row.recordingId == metadata[i].current_recording &&
+        row.frame == metadata[i].current_frame,
+        dataset.tracks
+        )
+        @test unique(df.recordingId)[1] == metadata[i].current_recording
+        @test unique(df.frame)[1] == metadata[i].current_frame
+        @test df.trackId == metadata[i].track_ids_in_frame
+    
+        @test X[i][1,:] == df.xCenter
+        @test X[i][2,:] == df.yCenter
+    end
 end
-
-
-device = Flux.cpu
-data = VectorLanelet.prepare_data(config, device)
