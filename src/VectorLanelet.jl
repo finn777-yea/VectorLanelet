@@ -6,7 +6,6 @@ using Lanelet2.Routing
 using Lanelet2.Core
 using AutomotiveSimulator
 using Flux
-using Zygote
 using CUDA
 using GraphNeuralNetworks
 using Graphs
@@ -15,8 +14,9 @@ using Transformers
 using Statistics
 using LinearAlgebra
 using Plots
+using DroneDatasetAdapter
+using DataFrames
 
-# Zygote.@nograd Flux.batch
 
 export create_residual_block,
        create_group_block,
@@ -39,6 +39,9 @@ export load_map_data,
        prepare_map_features,
        agent_features_upsample
 include("dataset_processing.jl")
+
+export create_prediction_dataset
+include("recording_processing.jl")
 
 export create_filtered_interaction_graph,
        create_interaction_graphs
