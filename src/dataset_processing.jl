@@ -112,7 +112,7 @@ Prepare map features stored in polyline level GNNGraph(fulled-connected graph)
     routing_graph -> g_heteromap
 """
 function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false)
-    polyline_graphs, pos_llt = get_polyline_graphs(lanelet_roadway, g_meta)
+    polylines_graph = get_polylines_graph(lanelet_roadway, g_meta)
     # Compute the mean and std
     # Only use the start x and start y of each vector for mean and std
     μ, σ = VectorLanelet.calculate_mean_and_std(polyline_graphs.x[1:2, :]; dims=2)
@@ -135,12 +135,14 @@ function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false
         polyline_graphs=polyline_graphs, g_heteromap=g_heteromap, μ=μ, σ=σ)
     end
 
-    return polyline_graphs, g_heteromap, pos_llt, μ, σ
+    return polylines_graph, g_heteromap, μ, σ
 end
-
-function get_polyline_graphs(lanelet_roadway, g_meta)
-    polyline_graphs = GNNGraph[]
-    pos_llt = []
+"""
+    get_polylines_graph(lanelet_roadway, g_meta)
+return batched fully-connected graphs, each graph represents a lanelet
+"""
+function get_polylines_graph(lanelet_roadway, g_meta)
+    polylines_graph = GNNGraph[]
 
     # Traverse all the lanelets according to vertex order
     # The vertex order is acquired from gml file
@@ -160,7 +162,6 @@ function get_polyline_graphs(lanelet_roadway, g_meta)
 
         # Calculate the midpoint coordinates of the lanelet
         llt_midpoint = calculate_llt_midpoint(centerline)
-        push!(pos_llt, llt_midpoint)
 
         # Iterate over points in centerline to get vector-level features
         polyline_features = []
@@ -183,16 +184,14 @@ function get_polyline_graphs(lanelet_roadway, g_meta)
 
         g_fc.ndata.x = polyline_features
         g_fc.gdata.id = lanelet_id
-        push!(polyline_graphs, g_fc)
+        g_fc.gdata.pos = llt_midpoint
+        push!(polylines_graph, g_fc)
     end
 
-    pos_llt = hcat(pos_llt...)
+    polylines_graph = batch(polylines_graph)
+    @assert size(polylines_graph.x, 1) == 4 "Vector features should have $(size(polylines_graph.x, 1)) channels"
 
-    polyline_graphs = batch(polyline_graphs)
-    @assert size(polyline_graphs.x, 1) == 4
-    @assert polyline_graphs.num_graphs == nv(g_meta)
-
-    return polyline_graphs, pos_llt
+    return polylines_graph
 end
 
 # Calculate the midpoint coordinates of a given lanelet by its centerline
@@ -200,7 +199,7 @@ function calculate_llt_midpoint(centerline)
     num_points = length(centerline)
     mid_idx = div(num_points, 2)
     mid_point = centerline[mid_idx]
-    return [mid_point.pos.x, mid_point.pos.y]
+    return reshape([mid_point.pos.x, mid_point.pos.y], 2, 1)    # reshape for gnngraph.gdata
 end
 
 function agent_features_upsample(agt_features, upsample_size::Int=20)
@@ -218,12 +217,12 @@ function prepare_data(config, device::Function)
     agt_features_upsampled = map(agent_features_upsample, agt_features) |> device
 
     @info "Preparing map features on $(device)"
-    polyline_graphs, g_heteromap, llt_pos, μ, σ = prepare_map_features(lanelet_roadway, g_meta) |> device
+    polylines_graph, g_heteromap, μ, σ = prepare_map_features(lanelet_roadway, g_meta) |> device
 
     labels = config["predict_current_pos"] ? agt_features[:, 2, :] : agt_pos_end
 
     agent_data = (; agt_features_upsampled, agt_features)
-    map_data = (; polyline_graphs, g_heteromap, llt_pos, μ, σ)
+    map_data = (; polylines_graph, g_heteromap, μ, σ)
     data = (; agent_data, map_data, labels)
     return data
 end
