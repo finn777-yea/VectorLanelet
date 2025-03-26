@@ -37,9 +37,9 @@ end
 Flux.@layer LaneletStaticFusionPred
 
 function LaneletStaticFusionPred(config::Dict{String, Any}, μ, σ)
-    actornet = create_static_actor_net(config["actornet_in_channels"], config["actornet_hidden_channels"], μ, σ)
+    actornet = create_static_actor_net(config["actornet_in_channels"], config["actornet_hidden_channels"], μ.μ_agt, σ.σ_agt)
 
-    ple = PolylineEncoder(config["ple_in_channels"], config["ple_hidden_channels"], μ, σ;
+    ple = PolylineEncoder(config["ple_in_channels"], config["ple_hidden_channels"], μ.μ_map, σ.σ_map;
         num_layers=config["ple_num_layers"], norm=config["ple_norm"]
     )
 
@@ -63,7 +63,7 @@ function LaneletStaticFusionPred(config::Dict{String, Any}, μ, σ)
 
 
     # Prediction head
-    pred_head = create_prediction_head(config["fusion_out_dim"], μ, σ)
+    pred_head = create_prediction_head(config["fusion_out_dim"], μ.μ_map, σ.σ_map)
 
     LaneletStaticFusionPred(actornet, ple, mapenc, a2m, m2m, m2a, a2a, pred_head)
 end
@@ -106,11 +106,43 @@ function (model::LaneletStaticFusionPred)(agt_features::Union{Vector{<:AbstractA
     return predictions
 end
 
+function preprocess_data(::LaneletStaticFusionPred, data; overfit::Bool=false, overfit_idx::Int=1)
+    num_scenarios = length(data.agent_data.agt_features_upsampled)
+    agent_data, map_data, labels = data
+
+    agt_current_pos = [i[:,end,:] for i in agent_data.agt_features_upsampled]
+    agt_features = agt_current_pos
+    # duplicate
+    polyline_graphs = [map_data.polyline_graphs for _ in 1:num_scenarios]
+    g_heteromaps = [map_data.g_heteromap for _ in 1:num_scenarios]
+    llt_pos = [map_data.llt_pos for _ in 1:num_scenarios]
+
+
+    if overfit
+        @info "Performing overfitting"
+        training_x = (;agt_features=agt_features[overfit_idx,:], agt_current_pos=agt_current_pos[overfit_idx,:],
+        polyline_graphs=polyline_graphs[overfit_idx,:], g_heteromaps=g_heteromaps[overfit_idx,:], llt_pos=llt_pos[overfit_idx,:])
+        training_y = labels[overfit_idx,:]
+    else
+        training_x = (;agt_features, agt_current_pos,
+            polyline_graphs, g_heteromaps, llt_pos)
+        training_y = labels
+    end
+
+    return training_x, training_y
+end
+
 """
 Called after dataloader, take care of the interface with the model
 1. batching after dataloader
 2. create interaction interaction graphs
 
+expect the train_data_x to contain the following fields:
+- agt_features: num_scenarios x (2, num_agents)
+- agt_current_pos: num_scenarios x (2, num_agents)
+- polyline_graphs: num_scenarios x  polyline graphs
+- g_heteromaps: num_scenarios x routing_graph
+- llt_pos: num_scenarios x (2, num_lanelets)
 """
 function collate_data(::LaneletStaticFusionPred, train_data_x, config::Dict{String, Any})
     ga2m, gm2a, ga2a = create_interaction_graphs(
@@ -121,8 +153,9 @@ function collate_data(::LaneletStaticFusionPred, train_data_x, config::Dict{Stri
     config["agent2agent_dist_thrd"]
     )
 
+    # return only the input args for the model forward pass
     return(
-        train_data_x.agt_current_pos,
+        train_data_x.agt_features,
         train_data_x.polyline_graphs,
         Flux.batch(train_data_x.g_heteromaps),
         ga2m,

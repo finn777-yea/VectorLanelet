@@ -1,3 +1,6 @@
+#=
+    This training script can only be applied for toy example with the synthetic dummy data in dataset_processing.jl
+=#
 using VectorLanelet
 using Flux
 using MLUtils: splitobs
@@ -49,7 +52,7 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
     end
 
     # DataLoader
-    X, Y = VectorLanelet.preprocess_data(data, overfit=config["overfit"], overfit_idx=config["overfit_idx"])
+    X, Y = VectorLanelet.preprocess_data(model, data, overfit=config["overfit"], overfit_idx=config["overfit_idx"])
     train_data, val_data = splitobs((X, Y), at=config["train_fraction"])
     batch_size = config["overfit"] ? 1 : config["batch_size"]
 
@@ -101,37 +104,37 @@ function run_training(wblogger::WandbLogger, config::Dict{String, Any})
 
     end
 
-    if config["save_model"]
-        # Save the trained model
-        @info "Saving the trained model state"
-        model_name = "$(config["model_name"])_$(now()).jld2"
-        model_path = joinpath(@__DIR__, "../models/$(model_name)")
-        save_model_state(cpu(model), model_path)
-    else
-        @info "Plotting predictions"
-        # let (x, y) = train_data
-        #     ga2m_all, gm2a_all, ga2a_all = create_interaction_graphs(x.agt_current_pos, x.llt_pos,
-        #         config["agent2map_dist_thrd"], config["map2agent_dist_thrd"], config["agent2agent_dist_thrd"])
-        #     pred = model(batch_heteromaps(x)..., ga2m_all, gm2a_all, ga2a_all)
-        #     # Use cpu_view to move views of CuArray to cpu
-        #     VectorLanelet.plot_predictions(cpu_view(x.agt_features), cpu_view(y), cpu(pred),
-        #         grid_layout=config["plot_grid"], scenario_indices=config["plot_scenario_indices"])
-        # end
-        let (x, y) = val_data
-            x = VectorLanelet.collate_data(model, x, config)
-            pred = model(x...)
-            # TODO: x[1] is agt_features_upsampled, which leads to poor validation result
-            VectorLanelet.plot_predictions(cpu_view(x[1]), cpu_view(y), cpu(pred),
-                grid_layout=config["plot_grid"], scenario_indices=nothing)
-        end
-    end
+    # if config["save_model"]
+    #     # Save the trained model
+    #     @info "Saving the trained model state"
+    #     model_name = "$(config["model_name"])_$(now()).jld2"
+    #     model_path = joinpath(@__DIR__, "../models/$(model_name)")
+    #     save_model_state(cpu(model), model_path)
+    # else
+    #     @info "Plotting predictions"
+    #     # let (x, y) = train_data
+    #     #     ga2m_all, gm2a_all, ga2a_all = create_interaction_graphs(x.agt_current_pos, x.llt_pos,
+    #     #         config["agent2map_dist_thrd"], config["map2agent_dist_thrd"], config["agent2agent_dist_thrd"])
+    #     #     pred = model(batch_heteromaps(x)..., ga2m_all, gm2a_all, ga2a_all)
+    #     #     # Use cpu_view to move views of CuArray to cpu
+    #     #     VectorLanelet.plot_predictions(cpu_view(x.agt_features), cpu_view(y), cpu(pred),
+    #     #         grid_layout=config["plot_grid"], scenario_indices=config["plot_scenario_indices"])
+    #     # end
+    #     let (x, y) = val_data
+    #         x = VectorLanelet.collate_data(model, x, config)
+    #         pred = model(x...)
+    #         # TODO: x[1] is agent features, which leads to poor validation result
+    #         VectorLanelet.plot_predictions(cpu_view(x[1]), cpu_view(y), cpu(pred),
+    #             grid_layout=config["plot_grid"], scenario_indices=nothing)
+    #     end
+    # end
 end
 
 include("../src/config.jl")
 
 wblogger = WandbLogger(
     project = "VectorLanelet",
-    name = "demo-b$(config["batch_size"])-lr$(config["learning_rate"])-epochs$(config["num_epochs"])",
+    name = "$(config["model_name"])-b$(config["batch_size"])-lr$(config["learning_rate"])-epochs$(config["num_epochs"])",
     config = config
 )
 try

@@ -25,9 +25,8 @@ end
 # Data preparation
 lanelet_roadway, g_meta = load_map_data()
 
-agt_features, pos_agt, labels = prepare_agent_features(lanelet_roadway)
+agt_features, labels = prepare_agent_features(lanelet_roadway)
 agt_features_upsampled = agent_features_upsample(agt_features) |> gpu
-pos_agt = pos_agt |> gpu
 labels = labels |> gpu
 
 polyline_graphs, g_heteromap, μ, σ = prepare_map_features(lanelet_roadway, g_meta) |> gpu
@@ -40,3 +39,7 @@ model = setup_model(config, model_state_name)
 prediction = model(agt_features_upsampled, polyline_graphs, g_heteromap)
 
 VectorLanelet.plot_predictions(cpu(agt_features), cpu(labels), cpu(prediction), save=true)
+
+length(agt_features)
+scenario_idx = 4
+VectorLanelet.plot_predictions(agt_features[scenario_idx], labels[scenario_idx], labels[scenario_idx], save=false)
