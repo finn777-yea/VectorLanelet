@@ -4,8 +4,9 @@ Configuration for the model
 config = Dict{String, Any}()
 
 ### Data processing
-config["prepare_recording_data"] = true
-config["recording_data_path"] = joinpath(@__DIR__, "..", "res", "prediction_dataset_size200.jld2")
+config["recording_ids"] = [1,2,3,4,5]
+config["recording_path"] = joinpath(homedir(), "Documents", "highD-dataset-v1.0")
+config["recording_agent_data_path"] = joinpath(@__DIR__, "..", "res", "highd_prediction_dataset_size500.jld2")
 
 config["cluster_thrd"] = 30.0f0
 

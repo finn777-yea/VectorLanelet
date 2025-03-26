@@ -40,7 +40,9 @@ export load_map_data,
        agent_features_upsample
 include("dataset_processing.jl")
 
-export create_prediction_dataset
+export get_agent_prediction_dataset,
+       prepare_recording_data,
+       get_map_features
 include("recording_processing.jl")
 
 export create_filtered_interaction_graph,
