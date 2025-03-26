@@ -4,7 +4,7 @@
 function load_map_data()
     # Load the lanelet map
     location0_file = joinpath(@__DIR__, "../res","location0.osm")
-    projector = Projection.UtmProjector(Lanelet2.Io.Origin(50.99, 6.90))
+    projector = Projection.UtmProjector(Lanelet2.Io.Origin(50.9904, 6.9003))
     llmap = Lanelet2.Io.load(location0_file, projector)
 
     # Use passable lanelet submap
@@ -112,6 +112,33 @@ Prepare map features stored in polyline level GNNGraph(fulled-connected graph)
     routing_graph -> g_heteromap
 """
 function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false)
+    polyline_graphs, pos_llt = get_polyline_graphs(lanelet_roadway, g_meta)
+    # Compute the mean and std
+    # Only use the start x and start y of each vector for mean and std
+    μ, σ = VectorLanelet.calculate_mean_and_std(polyline_graphs.x[1:2, :]; dims=2)
+
+    g_heteromap = GNNHeteroGraph(
+        (:lanelet, :right, :lanelet) => extract_gml_src_dst(g_meta, "Right"),
+        (:lanelet, :left, :lanelet) => extract_gml_src_dst(g_meta, "Left"),
+        (:lanelet, :suc, :lanelet) => extract_gml_src_dst(g_meta, "Successor"),
+        # TODO: whether to put adjacent left/right here
+        (:lanelet, :adj_left, :lanelet) => extract_gml_src_dst(g_meta, "AdjacentLeft"),
+        (:lanelet, :adj_right, :lanelet) => extract_gml_src_dst(g_meta, "AdjacentRight"),
+        dir = :out
+    )
+
+    if save_features
+        # Save the map features
+        cache_path = joinpath(@__DIR__, "../res/map_features.jld2")
+        @info "Saving map features to $(cache_path)"
+        jldsave(cache_path, map_features=polyline_graphs.x,
+        polyline_graphs=polyline_graphs, g_heteromap=g_heteromap, μ=μ, σ=σ)
+    end
+
+    return polyline_graphs, g_heteromap, pos_llt, μ, σ
+end
+
+function get_polyline_graphs(lanelet_roadway, g_meta)
     polyline_graphs = GNNGraph[]
     pos_llt = []
 
@@ -138,6 +165,7 @@ function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false
         # Iterate over points in centerline to get vector-level features
         polyline_features = []
         for i in 1:num_vectors
+            # TODO: normalize the vector features according to agent-centric
             # Get start and end points of each polyline segment
             start_point = centerline[i]
             end_point = centerline[i+1]
@@ -151,7 +179,6 @@ function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false
             # Create feature vector with start and end coordinates
             push!(polyline_features, Float32[start_x, start_y, end_x, end_y])
         end
-        # Convert to matrix format
         polyline_features = reduce(hcat, polyline_features)       # feature matrix:(4, num_vectors)
 
         g_fc.ndata.x = polyline_features
@@ -165,28 +192,7 @@ function prepare_map_features(lanelet_roadway, g_meta, save_features::Bool=false
     @assert size(polyline_graphs.x, 1) == 4
     @assert polyline_graphs.num_graphs == nv(g_meta)
 
-    # Compute the mean and std
-    # Only use the start x and start y of each vector for mean and std
-    μ, σ = VectorLanelet.calculate_mean_and_std(polyline_graphs.x[1:2, :]; dims=2)
-
-    g_heteromap = GNNHeteroGraph(
-        (:lanelet, :right, :lanelet) => extract_gml_src_dst(g_meta, "Right"),
-        (:lanelet, :left, :lanelet) => extract_gml_src_dst(g_meta, "Left"),
-        (:lanelet, :suc, :lanelet) => extract_gml_src_dst(g_meta, "Successor"),
-        (:lanelet, :adj_left, :lanelet) => extract_gml_src_dst(g_meta, "AdjacentLeft"),
-        (:lanelet, :adj_right, :lanelet) => extract_gml_src_dst(g_meta, "AdjacentRight"),
-        dir = :out
-    )
-
-    if save_features
-        # Save the map features
-        cache_path = joinpath(@__DIR__, "../res/map_features.jld2")
-        @info "Saving map features to $(cache_path)"
-        jldsave(cache_path, map_features=polyline_graphs.x,
-        polyline_graphs=polyline_graphs, g_heteromap=g_heteromap, μ=μ, σ=σ)
-    end
-
-    return polyline_graphs, g_heteromap, pos_llt, μ, σ
+    return polyline_graphs, pos_llt
 end
 
 # Calculate the midpoint coordinates of a given lanelet by its centerline
@@ -220,37 +226,4 @@ function prepare_data(config, device::Function)
     map_data = (; polyline_graphs, g_heteromap, llt_pos, μ, σ)
     data = (; agent_data, map_data, labels)
     return data
-end
-
-"""
-    Preprocess data for LaneletFusionPred
-expect data to include:
-    - agent_data: (agt_features_upsampled, agt_features)
-    - map_data: (polyline_graphs, g_heteromap, llt_pos)
-    - labels: (2, timesteps, num_agents)
-"""
-function preprocess_data(data; overfit::Bool=false, overfit_idx::Int=1)
-    num_scenarios = length(data.agent_data.agt_features_upsampled)
-    agent_data, map_data, labels = data
-
-    agt_current_pos = [i[:,end,:] for i in agent_data.agt_features_upsampled]
-    # duplicate
-    polyline_graphs = [map_data.polyline_graphs for _ in 1:num_scenarios]
-    g_heteromaps = [map_data.g_heteromap for _ in 1:num_scenarios]
-    llt_pos = [map_data.llt_pos for _ in 1:num_scenarios]
-
-
-    if overfit
-        @info "Performing overfitting"
-        training_x = (;agt_features_upsampled=agent_data.agt_features_upsampled[overfit_idx,:],
-        agt_current_pos=agt_current_pos[overfit_idx,:],
-        polyline_graphs=polyline_graphs[overfit_idx,:], g_heteromaps=g_heteromaps[overfit_idx,:], llt_pos=llt_pos[overfit_idx,:])
-        training_y = labels[overfit_idx,:]
-    else
-        training_x = (;agent_data.agt_features_upsampled, agent_data.agt_features, agt_current_pos,
-            polyline_graphs, g_heteromaps, llt_pos)
-        training_y = labels
-    end
-
-    return training_x, training_y
 end
