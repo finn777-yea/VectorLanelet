@@ -2,6 +2,7 @@ Manifest.toml
 .CondaPkg
 dev
 models
+res
 
 wandb
 
