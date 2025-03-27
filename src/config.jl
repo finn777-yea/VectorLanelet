@@ -8,6 +8,8 @@ config["recording_ids"] = [1,2,3,4,5]
 config["recording_path"] = joinpath(homedir(), "Documents", "highD-dataset-v1.0")
 config["recording_agent_data_path"] = joinpath(@__DIR__, "..", "res", "highd_prediction_dataset_size500.jld2")
 
+config["routing_relations"] = ["Right", "Left"]
+
 config["cluster_thrd"] = 30.0f0
 
 ### Plotting

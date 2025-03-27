@@ -89,6 +89,7 @@ end
 function get_map_features(
     dataset::Dataset,
     recording_ids::Vector{Int},
+    config::Dict{String, Any},
     export_dir::String = joinpath(@__DIR__, "..", "res", "highd_routing_graphs")
 )
     !isdir(export_dir) && mkdir(export_dir)
@@ -100,19 +101,10 @@ function get_map_features(
         lanelet_roadway = dataset.maps[i]
         g_meta = get_routing_graph_in_MetaDiGraph(lanelet_roadway, export_dir, i)
         polylines_graph = VectorLanelet.get_polylines_graph(lanelet_roadway, g_meta)
-        g_heteromap = GNNHeteroGraph(
-            (:lanelet, :right, :lanelet) => VectorLanelet.extract_gml_src_dst(g_meta, "Right"),
-            (:lanelet, :left, :lanelet) => VectorLanelet.extract_gml_src_dst(g_meta, "Left"),
-            # (:lanelet, :suc, :lanelet) => VectorLanelet.extract_gml_src_dst(g_meta, "Successor"),
-            # TODO: whether to put adjacent left/right here
-            # TODO: handle no edge case
-            # (:lanelet, :adj_left, :lanelet) => VectorLanelet.extract_gml_src_dst(g_meta, "AdjacentLeft"),
-            # (:lanelet, :adj_right, :lanelet) => VectorLanelet.extract_gml_src_dst(g_meta, "AdjacentRight"),
-            dir = :out
-        )
+        hetero_routing_graph = create_gnn_heterograph(g_meta, config["routing_relations"])
 
         polylines_graphs[i] = polylines_graph
-        hetero_routing_graphs[i] = g_heteromap
+        hetero_routing_graphs[i] = hetero_routing_graph
     end
 
     return polylines_graphs, hetero_routing_graphs
@@ -162,7 +154,7 @@ function prepare_recording_data(config)
     agt_features = X
 
     # Map data
-    polylines_graphs, hetero_routing_graphs = get_map_features(dataset, recording_ids)
+    polylines_graphs, hetero_routing_graphs = get_map_features(dataset, recording_ids, config)
     polylines_graphs = [polylines_graphs[m.current_recording] for m in metadatas]
     hetero_routing_graphs = [hetero_routing_graphs[m.current_recording] for m in metadatas]
     # Retrieve agt_pos and llt_pos

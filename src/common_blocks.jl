@@ -66,8 +66,8 @@ end
     Takes a batch of fully connected graphs and node features as input_features
     NodeEncoder -> MaxPooling -> Duplication -> Concatenate -> OutputLayer -> MaxPooling
 
-    - g: Fully connected graph, representing a lanelet, with nodes as vectors of centerline
-    - vector_features: (2, num_vectors)
+- g: Fully connected graph, representing a lanelet, with nodes as vectors of centerline
+- vector_features: (4, num_vectors)
 """
 struct PolylineEncoder
     vec_preprocess::Chain
@@ -97,13 +97,17 @@ function PolylineEncoder(
     PolylineEncoder(vec_preprocess, layers, output_layer)
 end
 
-
+"""
+- g: GNNGraph: all the polylines across different maps, each polyline is a cluster
+- vector_features: (4, num_vectors)
+"""
 function (pline::PolylineEncoder)(g::GNNGraph, vector_features::AbstractMatrix)
     vector_features = pline.vec_preprocess(vector_features)
     max_pool = GlobalPool(max)
     clusters = graph_indicator(g)
     for layer in pline.layers
         vector_features = layer(vector_features)
+        # TODO: do max pooling seperately in each cluster(within same polylines)
         agg_data = max_pool(g, vector_features)[:, clusters]
         vector_features = vcat(vector_features, agg_data)
     end
@@ -119,13 +123,19 @@ end
 
 Flux.@layer MapEncoder
 
-function MapEncoder(in_channels::Int=64, out_channels::Int=64, num_layers::Int=4; ng=32)
+function MapEncoder(
+    in_channels::Int=64,
+    out_channels::Int=64,
+    num_layers::Int=4,
+    routing_relations::Vector{String}=["Right", "Left"];
+    ng::Int=32
+)
     layers = []
 
     for _ in 1:num_layers
         layer = (
             dense1 = Dense(in_channels=>out_channels),
-            heteroconv = create_hetero_conv(out_channels, out_channels),
+            heteroconv = create_hetero_conv(out_channels, out_channels, routing_relations),
             norm = GroupNorm(out_channels, gcd(ng, out_channels)),
             dense2 = Dense(out_channels=>out_channels, relu)
         )

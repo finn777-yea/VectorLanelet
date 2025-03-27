@@ -135,20 +135,14 @@ end
 #     return inverse_normalize
 # end
 
-function create_hetero_conv(in_channels, out_channels)
-    left_rel = (:lanelet, :left, :lanelet)
-    right_rel = (:lanelet, :right, :lanelet)
-    adj_left_rel = (:lanelet, :adj_left, :lanelet)
-    adj_right_rel = (:lanelet, :adj_right, :lanelet)
-    suc_rel = (:lanelet, :suc, :lanelet)
-
-    heteroconv = HeteroGraphConv(
-        left_rel => GATv2Conv(in_channels=>out_channels),
-        right_rel => GATv2Conv(in_channels=>out_channels),
-        adj_left_rel => GATv2Conv(in_channels=>out_channels),
-        adj_right_rel => GATv2Conv(in_channels=>out_channels),
-        suc_rel => GATv2Conv(in_channels=>out_channels)
-    )
+function create_hetero_conv(in_channels, out_channels, routing_relations::Vector{String})
+    pairs = []
+    for rel in routing_relations
+        pair = (:lanelet, Symbol(rel), :lanelet) => GATv2Conv(in_channels=>out_channels)
+        push!(pairs, pair)
+    end
+    heteroconv = HeteroGraphConv(pairs...)
+    return heteroconv
 end
 
 function create_prediction_head(input_dim::Int, μ, σ)

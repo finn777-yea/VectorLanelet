@@ -43,7 +43,12 @@ function LaneletStaticFusionPred(config::Dict{String, Any}, μ, σ)
         num_layers=config["ple_num_layers"], norm=config["ple_norm"]
     )
 
-    mapenc = MapEncoder(config["mapenc_hidden_channels"], config["mapenc_hidden_channels"], config["mapenc_num_layers"])
+    mapenc = MapEncoder(
+        config["mapenc_hidden_channels"],
+        config["mapenc_hidden_channels"],
+        config["mapenc_num_layers"],
+        config["routing_relations"]
+        )
 
     # Fusion setup
     a2m_layers = InteractionGraphModel[]
@@ -80,9 +85,12 @@ Parameters:
 """
 
 # TODO: Use profile to check the efficiency of the forward function
-function (model::LaneletStaticFusionPred)(agt_features::Union{Vector{<:AbstractArray}, SubArray{<:AbstractArray}},
-    polyline_graphs::Union{Vector{<:GNNGraph}, SubArray{<:GNNGraph}}, g_heteromaps, ga2m, gm2a, ga2a)
-
+function (model::LaneletStaticFusionPred)(
+    agt_features::Union{Vector{<:AbstractArray}, SubArray{<:AbstractArray}},
+    polylines_graphs,
+    g_heteromaps,
+    ga2m, gm2a, ga2a
+    )
     batch_size = length(agt_features)
     # Concatenate agt features for batch processing
     agt_features = cat(agt_features..., dims=2)
@@ -90,9 +98,8 @@ function (model::LaneletStaticFusionPred)(agt_features::Union{Vector{<:AbstractA
     # TODO: Ego encoder
     emb_actor = model.actornet(agt_features)
     # TODO: Consider how to process the polyline_graphs(vector of batched fully-connected graphs)
-    emb_lanelets = model.ple(polyline_graphs[1], polyline_graphs[1].x)
-    # Duplicate emb_map num_scenarios times
-    emb_lanelets = repeat(emb_lanelets,1,batch_size)     # (channels, num_scenarios x num_llts)
+    emb_lanelets = model.ple(polylines_graphs, polylines_graphs.x)
+
     emb_map = model.mapenc(g_heteromaps, emb_lanelets)        # (channels, num_scenarios x num_llts)
     emb_map = model.a2m((emb_map, emb_actor, ga2m))
     emb_map = model.m2m(g_heteromaps, emb_map)      # (channels, num_scenarios x num_llts)
@@ -139,14 +146,14 @@ Called after dataloader, take care of the interface with the model
 
 expect the train_data_x to contain the following fields:
 - agt_features: num_scenarios x (2, num_agents)
-- agt_current_pos: num_scenarios x (2, num_agents)
-- polyline_graphs: num_scenarios x  polyline graphs
-- g_heteromaps: num_scenarios x routing_graph
+- agt_pos: num_scenarios x (2, num_agents)
+- polylines_graphs: num_scenarios x  polyline graphs
+- hetero_routing_graphs: num_scenarios x routing_graph
 - llt_pos: num_scenarios x (2, num_lanelets)
 """
-function collate_data(::LaneletStaticFusionPred, train_data_x, config::Dict{String, Any})
+function collate_data(::LaneletStaticFusionPred, train_data_x::NamedTuple, config::Dict{String, Any})
     ga2m, gm2a, ga2a = create_interaction_graphs(
-        train_data_x.agt_current_pos,
+        train_data_x.agt_pos,
         train_data_x.llt_pos,
     config["agent2map_dist_thrd"],
     config["map2agent_dist_thrd"],
@@ -156,8 +163,8 @@ function collate_data(::LaneletStaticFusionPred, train_data_x, config::Dict{Stri
     # return only the input args for the model forward pass
     return(
         train_data_x.agt_features,
-        train_data_x.polyline_graphs,
-        Flux.batch(train_data_x.g_heteromaps),
+        Flux.batch(train_data_x.polylines_graphs),
+        Flux.batch(train_data_x.hetero_routing_graphs),
         ga2m,
         gm2a,
         ga2a
