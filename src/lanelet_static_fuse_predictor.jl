@@ -151,7 +151,11 @@ expect the train_data_x to contain the following fields:
 - hetero_routing_graphs: num_scenarios x routing_graph
 - llt_pos: num_scenarios x (2, num_lanelets)
 """
-function collate_data(::LaneletStaticFusionPred, train_data_x::NamedTuple, config::Dict{String, Any})
+function collate_data(
+    ::LaneletStaticFusionPred,
+    train_data_x::NamedTuple,
+    config::Dict{String, Any})
+
     ga2m, gm2a, ga2a = create_interaction_graphs(
         train_data_x.agt_pos,
         train_data_x.llt_pos,

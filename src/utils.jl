@@ -3,11 +3,32 @@ function extract_gml_src_dst(g, rel_type::String)
 
     src_list = Int64[]
     dst_list = Int64[]
-    for e in edges
-        push!(src_list, src(e))
-        push!(dst_list, dst(e))
+
+    isempty(edges) && return src_list, dst_list
+    if !isempty(edges)
+        for e in edges
+            push!(src_list, src(e))
+            push!(dst_list, dst(e))
+        end
+    else
+        @info "No edges found for relation type $(rel_type)"
     end
     return src_list, dst_list
+end
+
+function create_gnn_heterograph(g_meta::MetaDiGraph, routing_relations::Vector{String})
+    pairs = []
+    for rel in routing_relations
+        src_list, dst_list = extract_gml_src_dst(g_meta, rel)
+        isempty(src_list) && isempty(dst_list) && continue
+        pair = (:lanelet, Symbol(rel), :lanelet) => (src_list, dst_list)
+        push!(pairs, pair)
+    end
+    g_heteromap = GNNHeteroGraph(
+        pairs...,
+        dir = :out
+    )
+    return g_heteromap
 end
 
 """
@@ -35,7 +56,8 @@ Parameters:
 Returns:
 - g: GNNGraph for each sample in the batch
 """
-function create_filtered_interaction_graph(agt_pos::Union{Vector{<:AbstractArray}, SubArray{<:AbstractArray}},
+function create_filtered_interaction_graph(
+    agt_pos::Union{Vector{<:AbstractArray}, SubArray{<:AbstractArray}},
     ctx_pos::Union{Vector{<:AbstractArray}, SubArray{<:AbstractArray}},
     distance_threshold::Real,
     normalize_dist::Bool=false,
@@ -92,9 +114,9 @@ function create_filtered_interaction_graph(agt_pos::Union{Vector{<:AbstractArray
         if add_self_loops
             self_loop_nodes = [1:graph.num_nodes;]
             # TODO: hard-coded the edge data being 2 dim
-            # TODO: resolve edata cat_feature error of non-edge graphs
+            e_dim = 2
             graph = add_edges(graph, self_loop_nodes, self_loop_nodes)
-            graph.edata.e = zeros(Float32, 2, length(self_loop_nodes))
+            graph.edata.e = zeros(Float32, e_dim, length(self_loop_nodes))
         end
     else
         # Process edge data
@@ -130,8 +152,12 @@ function create_interaction_graphs(agent_pos, llt_pos,
 
     # Create interaction graphs
     ga2m_all = create_filtered_interaction_graph(llt_pos, agent_pos, a2m_dist_thrd)
-    gm2a_all = create_filtered_interaction_graph(agent_pos, llt_pos, m2a_dist_thrd)
-    ga2a_all = create_filtered_interaction_graph(agent_pos, agent_pos, a2a_dist_thrd)
+    ga2m_all.num_edges == ga2m_all.num_nodes && @info "No connection from agents to map"
 
+    gm2a_all = create_filtered_interaction_graph(agent_pos, llt_pos, m2a_dist_thrd)
+    gm2a_all.num_edges == gm2a_all.num_nodes && @info "No connection from map to agents"
+
+    ga2a_all = create_filtered_interaction_graph(agent_pos, agent_pos, a2a_dist_thrd)
+    ga2a_all.num_edges == ga2a_all.num_nodes && @info "No connection from agents to agents"
     return ga2m_all, gm2a_all, ga2a_all
 end

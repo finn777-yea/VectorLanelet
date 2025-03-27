@@ -138,7 +138,7 @@ expect the recording data to be saved in the following format:
 - Y: num_scenarios x (2, num_agents)
 
 Returns:
-- X: agt_features, agt_current_pos, polyline_graphs, g_heteromaps, llt_pos
+- X: agt_features, agt_pos, polyline_graphs, g_heteromaps, llt_pos
 - Y: labels
 - μ: μ_agt, μ_map
 - σ: σ_agt, σ_map

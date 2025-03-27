@@ -64,7 +64,6 @@ function (interaction::InteractionGraphModel)(data)
     @assert g.num_nodes == num_agts + num_ctx "Number of nodes is not correct"
 
     if g.num_edges == g.num_nodes       # only self-loops
-        @info "No interaction"
         agt_features = interaction.agt_res(agt_features)
         agt_features = relu(agt_features)
         return agt_features
